@@ -23,7 +23,6 @@ SUMMARY_TOPIC_KEYWORDS = {
         "reservation",
         "varaa",
         "varaus",
-        "bookingonline",
     ),
     "availability": (
         "availability",
@@ -650,15 +649,10 @@ class DailySummaryService:
         )
 
     def _contains_booking_link(self, session: dict[str, Any]) -> bool:
+        # Historical anonymized summaries may still carry this flag from calls
+        # logged before the booking-link SMS tool was removed (02-02).
         anonymized_summary = session.get("anonymized_summary") or {}
-        if anonymized_summary.get("booking_link_shared") is True:
-            return True
-        dialogue_turns = session.get("dialogue_turns") or []
-        return any(
-            "bookingonline" in str(turn.get("text") or "").casefold()
-            for turn in dialogue_turns
-            if isinstance(turn, dict)
-        )
+        return anonymized_summary.get("booking_link_shared") is True
 
     def _extract_occurrence_datetime(self, session: dict[str, Any]) -> Optional[datetime]:
         for field in ("ended_at", "started_at", "created_at"):

@@ -270,5 +270,214 @@ class SyntheticReservationStoreTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(on_disk["reservations"]), 1)
 
 
+class SyntheticReservationStoreAvailabilityTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.temp_root = Path("tests") / ".tmp_synthetic_reservation_store"
+        self.temp_root.mkdir(parents=True, exist_ok=True)
+        self.store_path = self.temp_root / f"{self._testMethodName}_{uuid4().hex}.json"
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_root, ignore_errors=True)
+
+    def _seed(self, reservations: list[dict]) -> None:
+        self.store_path.parent.mkdir(parents=True, exist_ok=True)
+        self.store_path.write_text(
+            json.dumps({"reservations": reservations}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    def _make_store(self, *, ttl_hours: float = 24.0, max_per_call: int = 3) -> SyntheticReservationStore:
+        return SyntheticReservationStore(
+            storage_path=self.store_path,
+            ttl=timedelta(hours=ttl_hours),
+            max_per_call=max_per_call,
+        )
+
+    async def test_available_unit_by_id_returns_priced_option(self):
+        store = self._make_store()
+        response = await store.check_availability(
+            {
+                "arrivalDate": _future_date(10),
+                "nights": 3,
+                "guests": 2,
+                "unitId": UNIT_ID,
+            }
+        )
+
+        self.assertEqual(response.source, "synthetic_reservation_store")
+        self.assertEqual(response.status, "available")
+        self.assertEqual(len(response.options), 1)
+        option = response.options[0]
+        self.assertEqual(option.status, "available")
+        self.assertEqual(option.price_total, 3 * 138)
+        self.assertTrue(response.booking_not_confirmed)
+
+    async def test_no_unit_selector_and_any_area_returns_one_option_per_unit(self):
+        store = self._make_store()
+        response = await store.check_availability(
+            {
+                "arrivalDate": _future_date(10),
+                "nights": 2,
+                "guests": 2,
+                "area": "any",
+            }
+        )
+
+        self.assertEqual(response.status, "available")
+        self.assertGreater(len(response.options), 1)
+
+    async def test_area_filter_returns_only_that_area_units(self):
+        store = self._make_store()
+        response = await store.check_availability(
+            {
+                "arrivalDate": _future_date(10),
+                "nights": 2,
+                "guests": 2,
+                "area": "Jokipuisto",
+            }
+        )
+
+        self.assertTrue(response.options)
+        self.assertTrue(all(option.area == "Jokipuisto" for option in response.options))
+
+    async def test_unit_name_resolves_via_fuzzy_matcher(self):
+        store = self._make_store()
+        response = await store.check_availability(
+            {
+                "arrivalDate": _future_date(10),
+                "nights": 2,
+                "guests": 2,
+                "unitName": "Jokipuistopark asunto 2",
+            }
+        )
+
+        self.assertEqual(len(response.options), 1)
+        self.assertEqual(response.options[0].unit_id, "jokipuistopark-asunto-2")
+
+    async def test_active_reservation_blocks_stay_then_frees_after_ttl(self):
+        blocking_arrival = _future_date(10)
+        blocking_departure = _future_date(12)
+        blocked_record = {
+            "reservation_id": "BLOCK123",
+            "unit_id": UNIT_ID,
+            "unit_name": "Jokipuistopark asunto 2",
+            "area": "Jokipuisto",
+            "arrival_date": blocking_arrival,
+            "departure_date": blocking_departure,
+            "nights": 2,
+            "guests": 2,
+            "price_total": 276,
+            "currency": "EUR",
+            "created_at": _iso_ago(3600),
+            "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+        }
+        self._seed([blocked_record])
+        store = self._make_store()
+
+        blocked_response = await store.check_availability(
+            {
+                "arrivalDate": blocking_arrival,
+                "nights": 2,
+                "guests": 2,
+                "unitId": UNIT_ID,
+            }
+        )
+        self.assertEqual(blocked_response.options[0].status, "unavailable")
+
+        expired_record = dict(blocked_record)
+        expired_record["expires_at"] = _iso_ago(1)
+        self._seed([expired_record])
+
+        freed_response = await store.check_availability(
+            {
+                "arrivalDate": blocking_arrival,
+                "nights": 2,
+                "guests": 2,
+                "unitId": UNIT_ID,
+            }
+        )
+        self.assertEqual(freed_response.options[0].status, "available")
+
+    async def test_guests_above_capacity_is_guest_count_unavailable(self):
+        store = self._make_store()
+        response = await store.check_availability(
+            {
+                "arrivalDate": _future_date(10),
+                "nights": 2,
+                "guests": 10,
+                "unitId": UNIT_ID,
+            }
+        )
+        self.assertEqual(response.options[0].status, "guest_count_unavailable")
+
+    async def test_nights_below_minimum_is_duration_unavailable_with_free_durations(self):
+        store = self._make_store()
+        response = await store.check_availability(
+            {
+                "arrivalDate": _future_date(10),
+                "nights": 1,
+                "guests": 2,
+                "unitId": "ranta-hostelli",
+            }
+        )
+        option = response.options[0]
+        self.assertEqual(option.status, "duration_unavailable")
+        self.assertTrue(option.available_durations)
+        self.assertTrue(all(duration.nights >= 2 for duration in option.available_durations))
+
+    async def test_arrival_date_yesterday_is_not_selectable(self):
+        store = self._make_store()
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        response = await store.check_availability(
+            {
+                "arrivalDate": yesterday,
+                "nights": 2,
+                "guests": 2,
+                "unitId": UNIT_ID,
+            }
+        )
+        self.assertEqual(response.options[0].status, "not_selectable")
+
+    async def test_unknown_unit_id_yields_unit_not_found(self):
+        store = self._make_store()
+        response = await store.check_availability(
+            {
+                "arrivalDate": _future_date(10),
+                "nights": 2,
+                "guests": 2,
+                "unitId": "does-not-exist",
+            }
+        )
+        self.assertEqual(response.status, "unknown")
+        self.assertEqual(response.error_code, "unit_not_found")
+        self.assertEqual(response.options, [])
+
+    async def test_malformed_arrival_date_raises_validation_error(self):
+        store = self._make_store()
+        from app.models.reservation import ReservationValidationError
+
+        with self.assertRaises(ReservationValidationError):
+            await store.check_availability(
+                {
+                    "arrivalDate": "not-a-date",
+                    "nights": 2,
+                    "guests": 2,
+                    "unitId": UNIT_ID,
+                }
+            )
+
+    async def test_every_response_carries_booking_not_confirmed_true(self):
+        store = self._make_store()
+        response = await store.check_availability(
+            {
+                "arrivalDate": _future_date(10),
+                "nights": 2,
+                "guests": 2,
+                "unitId": UNIT_ID,
+            }
+        )
+        self.assertTrue(response.booking_not_confirmed)
+
+
 if __name__ == "__main__":
     unittest.main()

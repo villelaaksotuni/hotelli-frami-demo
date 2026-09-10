@@ -3,28 +3,25 @@ import logging
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from app.services.availability_checker import (
-    AvailabilityValidationError,
-    availability_checker,
-)
-from app.services.availability_registry import get_all_units
+from app.services.reservation_provider import ReservationValidationError, reservation_provider
+from app.services.unit_registry import get_all_units
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.get("/api/bookingonline/units")
-async def list_bookingonline_units():
+@router.get("/api/reservations/units")
+async def list_reservation_units():
     return JSONResponse(content={"items": [unit.to_dict() for unit in get_all_units()]})
 
 
-@router.post("/api/bookingonline/availability")
-async def check_bookingonline_availability(request: Request):
+@router.post("/api/reservations/availability")
+async def check_reservation_availability(request: Request):
     try:
         payload = await request.json()
-        result = await availability_checker.check(payload)
+        result = await reservation_provider.check_availability(payload)
         return JSONResponse(content=result.to_dict())
-    except AvailabilityValidationError as exc:
+    except ReservationValidationError as exc:
         return JSONResponse(
             status_code=400,
             content={
