@@ -13,7 +13,9 @@ from app.services.realtime_session import (
     AVAILABILITY_TOOL_NAME,
     BOOKING_LINK_SMS_TOOL_NAME,
     CALLBACK_REQUEST_SMS_TOOL_NAME,
+    CREATE_RESERVATION_TOOL_NAME,
 )
+from app.services.reservation_provider import ReservationValidationError, reservation_provider
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +54,26 @@ async def execute_realtime_tool(
                 "booking_not_confirmed": True,
                 "error_code": "availability_tool_failed",
                 "message_for_assistant": "Availability could not be checked reliably.",
+            }
+
+    if name == CREATE_RESERVATION_TOOL_NAME:
+        try:
+            result = await reservation_provider.create_reservation(arguments, session=session)
+            return result.to_dict()
+        except ReservationValidationError as exc:
+            return {
+                "status": "invalid_request",
+                "booking_not_confirmed": True,
+                "error_code": "invalid_reservation_request",
+                "message_for_assistant": str(exc),
+            }
+        except Exception as exc:
+            logger.exception("Realtime tool execution failed tool=%s error=%s", name, exc)
+            return {
+                "status": "unknown",
+                "booking_not_confirmed": True,
+                "error_code": "create_reservation_failed",
+                "message_for_assistant": "Varausta ei pystytty tekemään luotettavasti juuri nyt.",
             }
 
     if name == BOOKING_LINK_SMS_TOOL_NAME:
