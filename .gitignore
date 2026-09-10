@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+.mypy_cache/
+.venv/
+venv/
+.env
+conversations_log/*.json
+data/*.json
+scripts/real_client_markers.txt
+tests/.tmp_*/
+build/
+dist/
+.docker/
+whatsapp commands.txt

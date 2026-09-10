@@ -1,0 +1,15 @@
+.git
+.gitignore
+.env
+.venv
+venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.mypy_cache
+.coverage
+tests
+conversations_log/*.json
+tests/.tmp_*
+build
+dist
