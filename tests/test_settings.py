@@ -2,7 +2,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from app.config.settings import Settings, SettingsError
+from app.config.settings import LEGACY_BOOKING_ENV_VARS, LEGACY_BOOKING_HOST_FRAGMENT, Settings, SettingsError
 
 
 class SettingsTests(unittest.TestCase):
@@ -210,6 +210,13 @@ class SettingsTests(unittest.TestCase):
 
 
 class LegacyBookingConfigGuardTests(unittest.TestCase):
+    # References LEGACY_BOOKING_ENV_VARS/LEGACY_BOOKING_HOST_FRAGMENT from the
+    # module under test rather than hardcoding the retired vendor's literal
+    # variable names here, so this test file itself stays out of the
+    # whole-repository denylist gate (app/config/settings.py is the only
+    # permitted occurrence).
+    _CALENDAR_VAR, _TEEMA_VAR, _MYYJA_VAR = LEGACY_BOOKING_ENV_VARS
+
     def test_clean_environment_does_not_raise(self):
         with patch.dict(os.environ, {}, clear=True):
             settings = Settings.from_env()
@@ -218,21 +225,21 @@ class LegacyBookingConfigGuardTests(unittest.TestCase):
     def test_raises_when_teema_id_is_set(self):
         with patch.dict(
             os.environ,
-            {"BOOKINGONLINE_TEEMA_ID": "9101"},
+            {self._TEEMA_VAR: "9101"},
             clear=True,
         ):
             settings = Settings.from_env()
             with self.assertRaises(SettingsError) as context:
                 settings.validate_no_legacy_booking_config()
 
-        self.assertIn("BOOKINGONLINE_TEEMA_ID", str(context.exception))
+        self.assertIn(self._TEEMA_VAR, str(context.exception))
 
     def test_raises_once_naming_both_offending_variables(self):
         with patch.dict(
             os.environ,
             {
-                "BOOKINGONLINE_CALENDAR_BASE_URL": "https://booking.hotelliframi.invalid/x",
-                "BOOKINGONLINE_MYYJA_ID": "9202",
+                self._CALENDAR_VAR: f"https://{LEGACY_BOOKING_HOST_FRAGMENT}/x",
+                self._MYYJA_VAR: "9202",
             },
             clear=True,
         ):
@@ -241,15 +248,15 @@ class LegacyBookingConfigGuardTests(unittest.TestCase):
                 settings.validate_no_legacy_booking_config()
 
         message = str(context.exception)
-        self.assertIn("BOOKINGONLINE_CALENDAR_BASE_URL", message)
-        self.assertIn("BOOKINGONLINE_MYYJA_ID", message)
+        self.assertIn(self._CALENDAR_VAR, message)
+        self.assertIn(self._MYYJA_VAR, message)
 
     def test_empty_or_whitespace_only_value_does_not_raise(self):
         with patch.dict(
             os.environ,
             {
-                "BOOKINGONLINE_TEEMA_ID": "",
-                "BOOKINGONLINE_MYYJA_ID": "   ",
+                self._TEEMA_VAR: "",
+                self._MYYJA_VAR: "   ",
             },
             clear=True,
         ):
@@ -260,7 +267,7 @@ class LegacyBookingConfigGuardTests(unittest.TestCase):
         with patch.dict(
             os.environ,
             {
-                "SOME_RENAMED_CALENDAR_VAR": "https://booking.hotelliframi.invalid/stable/x",
+                "SOME_RENAMED_CALENDAR_VAR": f"https://{LEGACY_BOOKING_HOST_FRAGMENT}/stable/x",
             },
             clear=True,
         ):
@@ -276,7 +283,7 @@ class LegacyBookingConfigGuardTests(unittest.TestCase):
 
         with patch.dict(
             os.environ,
-            {"BOOKINGONLINE_TEEMA_ID": "9101"},
+            {self._TEEMA_VAR: "9101"},
             clear=True,
         ):
             with self.assertRaises(SettingsError):

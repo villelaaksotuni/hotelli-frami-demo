@@ -626,8 +626,8 @@ class DailySummaryService:
         elif "availability" in topics:
             topic_label = "saatavuus"
 
-        if self._contains_booking_link(session):
-            suffix = "varauslinkki lähetetty"
+        if self._contains_reservation(session):
+            suffix = "varaus tehty"
         elif session.get("last_error"):
             suffix = "päättyi virheeseen"
         else:
@@ -648,11 +648,14 @@ class DailySummaryService:
             f"{detail}; {suffix}."
         )
 
-    def _contains_booking_link(self, session: dict[str, Any]) -> bool:
-        # Historical anonymized summaries may still carry this flag from calls
-        # logged before the booking-link SMS tool was removed (02-02).
+    def _contains_reservation(self, session: dict[str, Any]) -> bool:
+        # The server-recorded signal is authoritative — never inferred from
+        # dialogue-turn text, so a caller cannot forge it by speech (T-02-06).
+        analytics = session.get("analytics") or {}
+        if "reservation_created" in analytics:
+            return analytics.get("reservation_created") is True
         anonymized_summary = session.get("anonymized_summary") or {}
-        return anonymized_summary.get("booking_link_shared") is True
+        return anonymized_summary.get("reservation_created") is True
 
     def _extract_occurrence_datetime(self, session: dict[str, Any]) -> Optional[datetime]:
         for field in ("ended_at", "started_at", "created_at"):

@@ -12,7 +12,7 @@ The synthetic booking backend lives in:
   HTTP route) goes through
 - `app/routes/availability.py` for the public HTTP endpoints
 
-This subsystem replaces the former HTML-scraping BookingOnline integration entirely. It is
+This subsystem replaces the former HTML-scraping vendor integration entirely. It is
 synthetic, self-contained, and isolated: no code path in this subsystem opens a network
 socket or reaches any live production booking system.
 

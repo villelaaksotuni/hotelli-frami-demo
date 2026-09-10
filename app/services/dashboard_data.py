@@ -63,7 +63,7 @@ class DashboardCall:
     resolution_label: str
     duration_seconds: Optional[float]
     follow_up_needed: bool
-    booking_link_shared: bool
+    reservation_created: bool
     has_error: bool
     topics: list[str]
     topic_labels: list[str]
@@ -91,9 +91,14 @@ def build_session_analytics(
     ).strip() or "unknown"
     topics = _extract_topics(anonymized_summary, dialogue_turns)
     follow_up_needed = bool(anonymized_summary.get("follow_up_needed", False))
-    # Historical anonymized summaries may still carry this flag from calls
-    # logged before the booking-link SMS tool was removed (02-02).
-    booking_link_shared = bool(anonymized_summary.get("booking_link_shared", False))
+    # The redacted session metadata is authoritative (transcript_service writes
+    # reservation_created there from the server-recorded tool-invocation
+    # history); the anonymized summary is the compatibility path for logs
+    # written directly by the anonymizer. Neither is ever inferred from
+    # transcript text, so a caller cannot forge this signal by speech.
+    reservation_created = bool(metadata.get("reservation_created")) or bool(
+        anonymized_summary.get("reservation_created")
+    )
     has_error = bool(last_error) or status != "completed"
     resolution_status = "resolved" if not has_error and not follow_up_needed else "unresolved"
 
@@ -109,7 +114,7 @@ def build_session_analytics(
         "topic_labels": [TOPIC_LABELS.get(topic, topic) for topic in topics],
         "primary_topic": topics[0] if topics else None,
         "follow_up_needed": follow_up_needed,
-        "booking_link_shared": booking_link_shared,
+        "reservation_created": reservation_created,
         "has_error": has_error,
         "resolution_status": resolution_status,
         "resolution_label": RESOLUTION_LABELS[resolution_status],
@@ -141,7 +146,7 @@ class DashboardDataService:
         unresolved_calls = total_calls - resolved_calls
         follow_up_calls = sum(1 for call in calls if call.follow_up_needed)
         error_calls = sum(1 for call in calls if call.has_error)
-        booking_link_calls = sum(1 for call in calls if call.booking_link_shared)
+        reservation_calls = sum(1 for call in calls if call.reservation_created)
         inbound_calls = sum(1 for call in calls if call.direction == "inbound")
         outbound_calls = sum(1 for call in calls if call.direction == "outbound")
 
@@ -174,7 +179,7 @@ class DashboardDataService:
                 "unresolved_calls": unresolved_calls,
                 "follow_up_calls": follow_up_calls,
                 "error_calls": error_calls,
-                "booking_link_calls": booking_link_calls,
+                "reservation_calls": reservation_calls,
                 "inbound_calls": inbound_calls,
                 "outbound_calls": outbound_calls,
                 "average_duration_seconds": average_duration_seconds,
@@ -272,7 +277,7 @@ class DashboardDataService:
             ),
             duration_seconds=_read_float(session.get("duration_seconds")),
             follow_up_needed=bool(analytics.get("follow_up_needed", False)),
-            booking_link_shared=bool(analytics.get("booking_link_shared", False)),
+            reservation_created=bool(analytics.get("reservation_created", False)),
             has_error=bool(analytics.get("has_error", False)),
             topics=topics,
             topic_labels=topic_labels,
