@@ -146,6 +146,8 @@ class ReservationToolDispatchTests(unittest.IsolatedAsyncioTestCase):
             {"arrivalDate": _future_date(), "nights": 61, "guests": 2, "unitId": UNIT_ID},
             {"arrivalDate": _future_date(), "nights": 2, "guests": 0, "unitId": UNIT_ID},
             {"arrivalDate": _future_date(), "nights": 2, "guests": 31, "unitId": UNIT_ID},
+            {"arrivalDate": _future_date(), "nights": 2.9, "guests": 2, "unitId": UNIT_ID},
+            {"arrivalDate": _future_date(), "nights": 2, "guests": 2.5, "unitId": UNIT_ID},
             {"arrivalDate": "not-a-date", "nights": 2, "guests": 2, "unitId": UNIT_ID},
             {
                 "arrivalDate": (date.today() - timedelta(days=1)).isoformat(),
@@ -165,6 +167,16 @@ class ReservationToolDispatchTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result["status"], "invalid_request")
                 self.assertTrue(result["message_for_assistant"])
                 self.assertFalse(self.store_path.exists())
+
+    async def test_whole_valued_float_nights_and_guests_are_accepted(self):
+        result = await execute_realtime_tool(
+            CREATE_RESERVATION_TOOL_NAME,
+            json.dumps({"arrivalDate": _future_date(), "nights": 2.0, "guests": 2.0, "unitId": UNIT_ID}),
+            session=self._new_session(),
+        )
+
+        self.assertEqual(result["status"], "confirmed")
+        self.assertEqual(result["reservation"]["nights"], 2)
 
     async def test_guests_above_capacity_is_unavailable(self):
         result = await execute_realtime_tool(
