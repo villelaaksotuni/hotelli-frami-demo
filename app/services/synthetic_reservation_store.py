@@ -527,10 +527,12 @@ class SyntheticReservationStore:
 
     def _write_state_unlocked(self, state: dict[str, Any]) -> None:
         self._storage_path.parent.mkdir(parents=True, exist_ok=True)
-        self._storage_path.write_text(
+        tmp_path = self._storage_path.with_name(self._storage_path.name + ".tmp")
+        tmp_path.write_text(
             json.dumps(state, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        tmp_path.replace(self._storage_path)
 
     @staticmethod
     def _is_active(reservation: dict[str, Any], *, now: datetime) -> bool:

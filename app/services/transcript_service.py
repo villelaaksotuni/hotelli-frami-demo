@@ -42,16 +42,21 @@ def _write_session_logs(session: CallSession, anonymized_summary) -> Conversatio
 
     session_record = _build_session_record(session, anonymized_summary.to_dict())
     session_log_path = os.path.join(log_dir, f"session_{session_identifier}_{timestamp}.json")
-    with open(session_log_path, "w", encoding="utf-8") as file_handle:
-        json.dump(session_record, file_handle, ensure_ascii=False, indent=2)
+    _write_json_atomic(session_log_path, session_record)
 
     summary_log_path = os.path.join(
         log_dir, f"conversation_summary_{session_identifier}_{timestamp}.json"
     )
-    with open(summary_log_path, "w", encoding="utf-8") as file_handle:
-        json.dump(anonymized_summary.to_dict(), file_handle, ensure_ascii=False, indent=2)
+    _write_json_atomic(summary_log_path, anonymized_summary.to_dict())
 
     return session.merged_dialogue_turns()
+
+
+def _write_json_atomic(path: str, payload: Dict[str, Any]) -> None:
+    tmp_path = f"{path}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as file_handle:
+        json.dump(payload, file_handle, ensure_ascii=False, indent=2)
+    os.replace(tmp_path, path)
 
 
 def _build_session_record(session: CallSession, anonymized_summary: Dict[str, Any]) -> Dict[str, Any]:

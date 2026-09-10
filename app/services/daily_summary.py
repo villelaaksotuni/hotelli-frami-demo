@@ -759,10 +759,12 @@ class DailySummaryService:
             **(metadata or {}),
         }
         self._history_path.parent.mkdir(parents=True, exist_ok=True)
-        self._history_path.write_text(
+        tmp_path = self._history_path.with_name(self._history_path.name + ".tmp")
+        tmp_path.write_text(
             json.dumps(history, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        tmp_path.replace(self._history_path)
 
     @staticmethod
     def _compact_text(value: str, max_length: int) -> str:
