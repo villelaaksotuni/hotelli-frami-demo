@@ -50,7 +50,6 @@ class ConversationAnonymizerTests(unittest.TestCase):
                                 "outcome": "Yhteenveto muodostettiin.",
                                 "topics": ["varaus"],
                                 "follow_up_needed": False,
-                                "booking_link_shared": False,
                                 "first_user_utterance_redacted": "Asiakas kysyi majoitusta.",
                                 "redaction_notes": [],
                             },
@@ -90,6 +89,76 @@ class ConversationAnonymizerTests(unittest.TestCase):
         self.assertEqual(captured["headers"]["Api-key"], "azure-key")
         self.assertNotIn("model", captured["body"])
         self.assertEqual(summary.anonymization_method, "azure_openai_llm")
+
+    def test_reservation_created_is_false_with_no_history(self):
+        session = CallSession(
+            call_sid="CA124",
+            stream_sid="MZ124",
+            config=CallConfig(language="fi"),
+        )
+        anonymizer = ConversationAnonymizer(
+            model="gpt-4o-mini",
+            timeout_seconds=5,
+            max_input_chars=2000,
+            enabled=False,
+        )
+
+        summary = anonymizer._build_fallback_summary(
+            session.merged_dialogue_turns(),
+            session=session,
+            reason="llm_anonymization_disabled",
+        )
+
+        self.assertFalse(summary.reservation_created)
+
+    def test_reservation_created_is_true_with_one_history_entry(self):
+        session = CallSession(
+            call_sid="CA125",
+            stream_sid="MZ125",
+            config=CallConfig(language="fi"),
+        )
+        session.metadata["create_reservation_history"] = [
+            {"unit_id": "jokipuistopark-asunto-2", "arrival_date": "2026-10-01", "departure_date": "2026-10-03", "reservation_id": "R1"}
+        ]
+        anonymizer = ConversationAnonymizer(
+            model="gpt-4o-mini",
+            timeout_seconds=5,
+            max_input_chars=2000,
+            enabled=False,
+        )
+
+        summary = anonymizer._build_fallback_summary(
+            session.merged_dialogue_turns(),
+            session=session,
+            reason="llm_anonymization_disabled",
+        )
+
+        self.assertTrue(summary.reservation_created)
+
+    def test_booking_words_in_transcript_with_empty_history_stay_false(self):
+        session = CallSession(
+            call_sid="CA126",
+            stream_sid="MZ126",
+            config=CallConfig(language="fi"),
+        )
+        session.transcript_entries = [
+            TranscriptEntry(speaker="user", text="Haluaisin tehda varauksen huomiseksi."),
+            TranscriptEntry(speaker="assistant", text="Toki, katsotaan saatavuus."),
+        ]
+        anonymizer = ConversationAnonymizer(
+            model="gpt-4o-mini",
+            timeout_seconds=5,
+            max_input_chars=2000,
+            enabled=False,
+        )
+
+        summary = anonymizer._build_fallback_summary(
+            session.merged_dialogue_turns(),
+            session=session,
+            reason="llm_anonymization_disabled",
+        )
+
+        self.assertFalse(summary.reservation_created)
 
 
 if __name__ == "__main__":

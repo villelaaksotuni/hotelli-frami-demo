@@ -7,7 +7,7 @@ from typing import Any, Dict
 
 from app.config.settings import settings
 from app.models.call import CallSession, ConversationLog
-from app.services.conversation_anonymizer import conversation_anonymizer
+from app.services.conversation_anonymizer import conversation_anonymizer, reservation_count_for
 from app.services.dashboard_data import build_session_analytics
 
 logger = logging.getLogger(__name__)
@@ -95,10 +95,16 @@ def _build_redacted_metadata(session: CallSession) -> Dict[str, Any]:
     direction = str(metadata.get("direction") or "unknown")
     to_number = metadata.get("to_number")
     from_number = metadata.get("from_number")
+    # reservation_count_for() reads session.metadata["create_reservation_history"] —
+    # the server-recorded fact of confirmed reservations, never inferred from
+    # transcript text — so writer (here) and reader (dashboard/digest) cannot drift.
+    reservation_count = reservation_count_for(session)
     return {
         "direction": direction,
         "counterparty_label": _mask_counterparty(direction, to_number, from_number),
         "has_last_error": bool(session.last_error),
+        "reservation_created": reservation_count > 0,
+        "reservation_count": reservation_count,
     }
 
 
