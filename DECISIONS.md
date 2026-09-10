@@ -49,3 +49,35 @@ the phase verified-by-evidence is honest; skipping it from automated re-executio
 only choice that doesn't risk destroying already-shipped, irreversible work.
 
 ---
+
+## [DECISION] Execute plans one at a time; use the harness's native worktree isolation, not GSD's manual bash choreography
+
+**Phase:** 2 (and, by default, 3-5)
+
+**What was ambiguous:** GSD's `execute-phase` workflow normally dispatches each plan's
+executor into an isolated git worktree via a fairly involved bash choreography (manifest
+tracking, per-agent worktree create/merge/cleanup, cwd-drift guards). Phase 2's three plans
+are strictly sequential — each wave has exactly one plan, all three touch overlapping files
+by design — so I first tried running executors directly on the main tree with no isolation
+at all. The harness itself refused: `Agent()` for `subagent_type="gsd-executor"` on this
+project resolves dispatch isolation to `harness-worktree` and hard-requires
+`isolation="worktree"` on the call.
+
+**Option chosen:** Keep plans strictly sequential (one executor at a time, next one only
+starts after the previous is merged back), but use the Agent tool's own built-in
+`isolation="worktree"` parameter for each dispatch, rather than replicating GSD's manual
+manifest/merge/cleanup bash script by hand. After each executor returns, merge its branch
+back with `git merge --no-ff` and remove the worktree myself.
+
+**Alternatives considered:**
+1. Hand-replicate the full GSD worktree manifest/cleanup bash — rejected: higher risk of
+   getting the bash wrong and leaving stray worktrees/branches, when the harness already
+   provides the same isolation guarantee natively through the Agent tool's own mechanism.
+2. Run without isolation — rejected: the harness enforces it; not optional here.
+
+**Why:** The isolation *guarantee* (an executor can't step on the orchestrator's working
+tree) is what matters; GSD's own bash script and the harness's native worktree mode both
+deliver it. Using the native mechanism is simpler and lower-risk than reimplementing GSD's
+version, and satisfies the harness's hard requirement.
+
+---
