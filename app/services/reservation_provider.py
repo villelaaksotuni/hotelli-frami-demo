@@ -7,6 +7,7 @@ from typing import Any, Optional, Protocol
 from app.config.settings import settings
 from app.models.call import CallSession
 from app.models.reservation import (
+    AvailabilityResponse,
     CreateReservationResult,
     Reservation,
     ReservationValidationError,
@@ -23,6 +24,8 @@ class ReservationProvider(Protocol):
         *,
         session: Optional[CallSession] = None,
     ) -> CreateReservationResult: ...
+
+    async def check_availability(self, payload: dict[str, Any]) -> AvailabilityResponse: ...
 
     def list_active_reservations(self) -> list[Reservation]: ...
 
