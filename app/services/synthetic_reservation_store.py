@@ -32,8 +32,12 @@ def _utc_now_iso() -> str:
 
 
 def _read_positive_int(value: Any, field_name: str, *, max_value: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise ReservationValidationError(f"{field_name} must be a positive integer")
     try:
         parsed = int(value)
+        if isinstance(value, float) and value != parsed:
+            raise ValueError(f"{field_name} must be a positive integer")
     except (TypeError, ValueError) as exc:
         raise ReservationValidationError(f"{field_name} must be a positive integer") from exc
     if parsed <= 0 or parsed > max_value:
