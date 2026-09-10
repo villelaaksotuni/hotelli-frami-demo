@@ -209,5 +209,79 @@ class SettingsTests(unittest.TestCase):
             settings.validate_runtime_dependencies()
 
 
+class LegacyBookingConfigGuardTests(unittest.TestCase):
+    def test_clean_environment_does_not_raise(self):
+        with patch.dict(os.environ, {}, clear=True):
+            settings = Settings.from_env()
+            settings.validate_no_legacy_booking_config()
+
+    def test_raises_when_teema_id_is_set(self):
+        with patch.dict(
+            os.environ,
+            {"BOOKINGONLINE_TEEMA_ID": "9101"},
+            clear=True,
+        ):
+            settings = Settings.from_env()
+            with self.assertRaises(SettingsError) as context:
+                settings.validate_no_legacy_booking_config()
+
+        self.assertIn("BOOKINGONLINE_TEEMA_ID", str(context.exception))
+
+    def test_raises_once_naming_both_offending_variables(self):
+        with patch.dict(
+            os.environ,
+            {
+                "BOOKINGONLINE_CALENDAR_BASE_URL": "https://booking.hotelliframi.invalid/x",
+                "BOOKINGONLINE_MYYJA_ID": "9202",
+            },
+            clear=True,
+        ):
+            settings = Settings.from_env()
+            with self.assertRaises(SettingsError) as context:
+                settings.validate_no_legacy_booking_config()
+
+        message = str(context.exception)
+        self.assertIn("BOOKINGONLINE_CALENDAR_BASE_URL", message)
+        self.assertIn("BOOKINGONLINE_MYYJA_ID", message)
+
+    def test_empty_or_whitespace_only_value_does_not_raise(self):
+        with patch.dict(
+            os.environ,
+            {
+                "BOOKINGONLINE_TEEMA_ID": "",
+                "BOOKINGONLINE_MYYJA_ID": "   ",
+            },
+            clear=True,
+        ):
+            settings = Settings.from_env()
+            settings.validate_no_legacy_booking_config()
+
+    def test_renamed_variable_pointing_at_legacy_host_is_still_caught(self):
+        with patch.dict(
+            os.environ,
+            {
+                "SOME_RENAMED_CALENDAR_VAR": "https://booking.hotelliframi.invalid/stable/x",
+            },
+            clear=True,
+        ):
+            settings = Settings.from_env()
+            with self.assertRaises(SettingsError) as context:
+                settings.validate_no_legacy_booking_config()
+
+        self.assertIn("SOME_RENAMED_CALENDAR_VAR", str(context.exception))
+
+    def test_reads_live_process_environment_not_settings_instance(self):
+        with patch.dict(os.environ, {}, clear=True):
+            settings = Settings.from_env()
+
+        with patch.dict(
+            os.environ,
+            {"BOOKINGONLINE_TEEMA_ID": "9101"},
+            clear=True,
+        ):
+            with self.assertRaises(SettingsError):
+                settings.validate_no_legacy_booking_config()
+
+
 if __name__ == "__main__":
     unittest.main()

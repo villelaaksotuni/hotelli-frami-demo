@@ -70,6 +70,10 @@ def _log_runtime_configuration() -> None:
 async def lifespan(app: FastAPI):
     _log_runtime_configuration()
     settings.validate_runtime_dependencies()
+    # Deliberately unconditional: VALIDATE_STARTUP_DEPENDENCIES defaults to false,
+    # so gating this guard behind that flag (like validate_startup below) would
+    # silently skip it on every default deployment.
+    settings.validate_no_legacy_booking_config()
     if settings.validate_startup_dependencies:
         settings.validate_startup()
     _log_registered_routes(app)
