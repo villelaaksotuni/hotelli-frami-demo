@@ -228,6 +228,9 @@ class Settings:
     admin_prompt_password: Optional[str]
     prompt_store_path: str
     conversation_log_dir: str
+    reservation_store_path: str
+    reservation_ttl_hours: float
+    max_reservations_per_call: int
     callback_request_to_phone: Optional[str]
     daily_summary_to_phone: Optional[str]
     daily_summary_timezone: str
@@ -316,6 +319,12 @@ class Settings:
                 "CONVERSATION_LOG_DIR",
                 default_data_dir,
             ),
+            reservation_store_path=cls._read_path(
+                "SYNTHETIC_RESERVATION_STORE_PATH",
+                f"{default_data_dir}/reservations.json",
+            ),
+            reservation_ttl_hours=cls._read_float("SYNTHETIC_RESERVATION_TTL_HOURS", 24.0),
+            max_reservations_per_call=cls._read_int("SYNTHETIC_MAX_RESERVATIONS_PER_CALL", 3),
             callback_request_to_phone=os.getenv("CALLBACK_REQUEST_TO_PHONE")
             or os.getenv("OWNER_NOTIFICATION_TO_PHONE"),
             daily_summary_to_phone=os.getenv("DAILY_SUMMARY_TO_PHONE"),

@@ -12,6 +12,7 @@ SESSION_UPDATE_TIMEOUT_SECONDS = 5
 AVAILABILITY_TOOL_NAME = "check_bookingonline_availability"
 BOOKING_LINK_SMS_TOOL_NAME = "send_bookingonline_calendar_link_sms"
 CALLBACK_REQUEST_SMS_TOOL_NAME = "send_owner_callback_request_sms"
+CREATE_RESERVATION_TOOL_NAME = "create_reservation"
 AVAILABILITY_TOOL_SCHEMA = {
     "type": "function",
     "name": AVAILABILITY_TOOL_NAME,
@@ -81,6 +82,41 @@ BOOKING_LINK_SMS_TOOL_SCHEMA = {
                 ),
             },
         },
+    },
+}
+CREATE_RESERVATION_TOOL_SCHEMA = {
+    "type": "function",
+    "name": CREATE_RESERVATION_TOOL_NAME,
+    "description": (
+        "Create a reservation in the Hotelli Frami demonstration reservation store. "
+        "The reservation is a demo record only and is never a real, binding hotel booking."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "arrivalDate": {
+                "type": "string",
+                "description": "Arrival date in YYYY-MM-DD format.",
+            },
+            "nights": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Number of nights requested.",
+            },
+            "guests": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Number of guests.",
+            },
+            "unitId": {
+                "type": "string",
+                "description": (
+                    "The exact unit_id returned by the availability tool for the unit "
+                    "the caller wants to reserve."
+                ),
+            },
+        },
+        "required": ["arrivalDate", "nights", "guests", "unitId"],
     },
 }
 CALLBACK_REQUEST_SMS_TOOL_SCHEMA = {
@@ -196,6 +232,7 @@ def _build_session_update_payload(config: CallConfig, instructions: str) -> dict
                 AVAILABILITY_TOOL_SCHEMA,
                 BOOKING_LINK_SMS_TOOL_SCHEMA,
                 CALLBACK_REQUEST_SMS_TOOL_SCHEMA,
+                CREATE_RESERVATION_TOOL_SCHEMA,
             ],
             "tool_choice": "auto",
         },
