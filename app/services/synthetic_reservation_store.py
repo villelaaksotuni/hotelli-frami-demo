@@ -206,9 +206,10 @@ class SyntheticReservationStore:
                     and entry.get("arrival_date") == arrival_iso
                     and entry.get("departure_date") == departure_iso
                 ):
-                    existing_reservation = self._find_reservation_by_id(
-                        entry.get("reservation_id")
-                    )
+                    with self._lock:
+                        existing_reservation = self._find_reservation_by_id(
+                            entry.get("reservation_id")
+                        )
                     return CreateReservationResult(
                         status="already_reserved_for_stay",
                         source="synthetic_reservation_store",
