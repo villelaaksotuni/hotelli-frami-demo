@@ -9,16 +9,16 @@ from app.models.call import CallConfig
 logger = logging.getLogger(__name__)
 
 SESSION_UPDATE_TIMEOUT_SECONDS = 5
-AVAILABILITY_TOOL_NAME = "check_bookingonline_availability"
-BOOKING_LINK_SMS_TOOL_NAME = "send_bookingonline_calendar_link_sms"
+AVAILABILITY_TOOL_NAME = "check_availability"
 CALLBACK_REQUEST_SMS_TOOL_NAME = "send_owner_callback_request_sms"
 CREATE_RESERVATION_TOOL_NAME = "create_reservation"
 AVAILABILITY_TOOL_SCHEMA = {
     "type": "function",
     "name": AVAILABILITY_TOOL_NAME,
     "description": (
-        "Return current Hotelli Frami BookingOnline calendar availability and prices "
-        "for a requested stay. This tool does not create or confirm a booking."
+        "Return current availability and prices from the Hotelli Frami demonstration "
+        "reservation store for a requested stay. This tool does not itself create a "
+        "reservation."
     ),
     "parameters": {
         "type": "object",
@@ -52,36 +52,12 @@ AVAILABILITY_TOOL_SCHEMA = {
             "unitId": {
                 "type": "string",
                 "description": (
-                    "Optional internal BookingOnline unit id. Prefer unitName when the caller refers "
+                    "Optional internal unit id. Prefer unitName when the caller refers "
                     "to an apartment or property by name."
                 ),
             },
         },
         "required": ["arrivalDate", "nights", "guests"],
-    },
-}
-BOOKING_LINK_SMS_TOOL_SCHEMA = {
-    "type": "function",
-    "name": BOOKING_LINK_SMS_TOOL_NAME,
-    "description": "Send the caller a Hotelli Frami BookingOnline reservation calendar link by SMS.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "tuoteId": {
-                "type": "string",
-                "description": (
-                    "Preferred BookingOnline tuote_id value such as 9202-51004. "
-                    "Use the exact tuote_id returned by the availability tool when available."
-                ),
-            },
-            "unitId": {
-                "type": "string",
-                "description": (
-                    "Fallback internal BookingOnline unit id such as jokipuistopark-asunto-2 "
-                    "when tuoteId is not available."
-                ),
-            },
-        },
     },
 }
 CREATE_RESERVATION_TOOL_SCHEMA = {
@@ -113,6 +89,13 @@ CREATE_RESERVATION_TOOL_SCHEMA = {
                 "description": (
                     "The exact unit_id returned by the availability tool for the unit "
                     "the caller wants to reserve."
+                ),
+            },
+            "unitName": {
+                "type": "string",
+                "description": (
+                    "The apartment or property name as the caller said it. Use only "
+                    "when no unitId is available."
                 ),
             },
         },
@@ -230,7 +213,6 @@ def _build_session_update_payload(config: CallConfig, instructions: str) -> dict
             "output_modalities": ["audio"],
             "tools": [
                 AVAILABILITY_TOOL_SCHEMA,
-                BOOKING_LINK_SMS_TOOL_SCHEMA,
                 CALLBACK_REQUEST_SMS_TOOL_SCHEMA,
                 CREATE_RESERVATION_TOOL_SCHEMA,
             ],

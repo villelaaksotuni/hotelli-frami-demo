@@ -91,11 +91,9 @@ def build_session_analytics(
     ).strip() or "unknown"
     topics = _extract_topics(anonymized_summary, dialogue_turns)
     follow_up_needed = bool(anonymized_summary.get("follow_up_needed", False))
-    booking_link_shared = bool(anonymized_summary.get("booking_link_shared", False)) or any(
-        "bookingonline" in str(turn.get("text") or "").casefold()
-        for turn in dialogue_turns
-        if isinstance(turn, dict)
-    )
+    # Historical anonymized summaries may still carry this flag from calls
+    # logged before the booking-link SMS tool was removed (02-02).
+    booking_link_shared = bool(anonymized_summary.get("booking_link_shared", False))
     has_error = bool(last_error) or status != "completed"
     resolution_status = "resolved" if not has_error and not follow_up_needed else "unresolved"
 

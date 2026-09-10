@@ -228,7 +228,10 @@ class ConversationAnonymizer:
         reason: str,
     ) -> AnonymizedConversationSummary:
         first_user_utterance = self._first_user_utterance(dialogue_turns)
-        booking_link_shared = "bookingonline" in self._format_dialogue_turns(dialogue_turns).casefold()
+        # No reliable transcript signal exists for this once the booking-link SMS
+        # tool was removed (02-02); a synthetic reservation confirmation is read
+        # back verbally instead of texted as a link.
+        booking_link_shared = False
         topics = self._infer_topics(self._format_dialogue_turns(dialogue_turns))
         redacted_utterance = self._build_fallback_opening_note(first_user_utterance, topics)
         return AnonymizedConversationSummary(

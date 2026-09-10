@@ -3,15 +3,9 @@ import logging
 from typing import Any, Dict, Optional
 
 from app.models.call import CallSession
-from app.services.availability_checker import (
-    AvailabilityValidationError,
-    availability_checker,
-)
-from app.services.booking_link_sms import booking_link_sms_service
 from app.services.callback_request_sms import callback_request_sms_service
 from app.services.realtime_session import (
     AVAILABILITY_TOOL_NAME,
-    BOOKING_LINK_SMS_TOOL_NAME,
     CALLBACK_REQUEST_SMS_TOOL_NAME,
     CREATE_RESERVATION_TOOL_NAME,
 )
@@ -38,9 +32,9 @@ async def execute_realtime_tool(
 
     if name == AVAILABILITY_TOOL_NAME:
         try:
-            result = await availability_checker.check(arguments)
+            result = await reservation_provider.check_availability(arguments)
             return result.to_dict()
-        except AvailabilityValidationError as exc:
+        except ReservationValidationError as exc:
             return {
                 "status": "unknown",
                 "booking_not_confirmed": True,
@@ -74,24 +68,6 @@ async def execute_realtime_tool(
                 "booking_not_confirmed": True,
                 "error_code": "create_reservation_failed",
                 "message_for_assistant": "Varausta ei pystytty tekemään luotettavasti juuri nyt.",
-            }
-
-    if name == BOOKING_LINK_SMS_TOOL_NAME:
-        try:
-            result = booking_link_sms_service.send_calendar_link(
-                session=session,
-                tuote_id=_read_optional_str(arguments.get("tuoteId")),
-                unit_id=_read_optional_str(arguments.get("unitId")),
-            )
-            return result.to_dict()
-        except Exception as exc:
-            logger.exception("Realtime tool execution failed tool=%s error=%s", name, exc)
-            return {
-                "status": "not_sent",
-                "sent": False,
-                "booking_not_confirmed": True,
-                "error_code": "booking_link_sms_failed",
-                "message_for_assistant": "Tekstiviestin lahettaminen ei onnistunut luotettavasti.",
             }
 
     if name == CALLBACK_REQUEST_SMS_TOOL_NAME:
