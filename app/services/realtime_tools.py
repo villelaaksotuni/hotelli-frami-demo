@@ -51,6 +51,17 @@ async def execute_realtime_tool(
             }
 
     if name == CREATE_RESERVATION_TOOL_NAME:
+        if session is None:
+            logger.warning(
+                "Refusing create_reservation dispatch tool=%s: no session resolved for call",
+                name,
+            )
+            return {
+                "status": "invalid_request",
+                "booking_not_confirmed": True,
+                "error_code": "session_unavailable",
+                "message_for_assistant": "Varausta ei voitu yhdistää puheluun juuri nyt.",
+            }
         try:
             result = await reservation_provider.create_reservation(arguments, session=session)
             return result.to_dict()
