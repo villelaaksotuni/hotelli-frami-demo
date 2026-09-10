@@ -80,6 +80,17 @@ class ReservationToolDispatchTests(unittest.IsolatedAsyncioTestCase):
         on_disk = json.loads(self.store_path.read_text())
         self.assertEqual(len(on_disk["reservations"]), 1)
 
+    async def test_session_none_refuses_dispatch_with_session_unavailable(self):
+        result = await execute_realtime_tool(
+            CREATE_RESERVATION_TOOL_NAME,
+            json.dumps({"arrivalDate": _future_date(), "nights": 2, "guests": 2, "unitId": UNIT_ID}),
+            session=None,
+        )
+
+        self.assertEqual(result["status"], "invalid_request")
+        self.assertEqual(result["error_code"], "session_unavailable")
+        self.assertFalse(self.store_path.exists())
+
     async def test_overlapping_stay_for_same_unit_is_unavailable(self):
         arrival = date.today() + timedelta(days=10)
         args_one = json.dumps(
