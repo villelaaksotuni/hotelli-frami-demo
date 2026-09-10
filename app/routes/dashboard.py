@@ -578,9 +578,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           note: "Puhelut, joissa oli virhe tai epäonnistuminen",
         },
         {
-          label: "Varauslinkki jaettu",
-          value: summary.booking_link_calls,
-          note: "Puhelut, joissa linkki lähetettiin",
+          label: "Varaus tehty",
+          value: summary.reservation_calls,
+          note: "Puhelut, joissa varaus tehtiin",
         },
         {
           label: "Keskimääräinen kesto",
@@ -671,7 +671,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
               <div class="chips">
                 ${call.topic_labels.map((topic) => `<span class="chip">${escapeHtml(topic)}</span>`).join("")}
                 ${call.follow_up_needed ? '<span class="chip">Jatkotoimi</span>' : ""}
-                ${call.booking_link_shared ? '<span class="chip">Varauslinkki jaettu</span>' : ""}
+                ${call.reservation_created ? '<span class="chip">Varaus tehty</span>' : ""}
                 ${call.has_error ? '<span class="chip">Virhe havaittu</span>' : ""}
               </div>
               <div class="call-summary">${escapeHtml(call.summary)}</div>

@@ -85,7 +85,8 @@ actually works, not just describing it.
 - Path prefix support via `PublicPathPrefixMiddleware` (`app/main.py:22-39`)
 - Lifespan management with `@asynccontextmanager` for startup/shutdown tasks
 - Single-threaded async event loop with `asyncio`
-- Thread pool executor for blocking operations: BookingOnline HTTP requests, OpenAI chat completions for anonymization
+- Thread pool executor for blocking operations: OpenAI chat completions for anonymization
+- Booking data is reached only through `app/services/reservation_provider.py`; no other module imports a concrete reservation-store backend directly
 - Thread-safe file I/O with `threading.Lock` in `PromptStore` (`app/services/prompt_store.py:51`)
 
 <!-- GSD:stack-end -->
@@ -96,7 +97,7 @@ actually works, not just describing it.
 
 ## Naming Patterns
 
-- Modules use `snake_case`: `sms_utils.py`, `availability_checker.py`, `conversation_anonymizer.py`
+- Modules use `snake_case`: `sms_utils.py`, `synthetic_reservation_store.py`, `conversation_anonymizer.py`
 - Test files follow pattern: `test_<module_name>.py` (e.g., `test_settings.py`, `test_health.py`)
 - All functions use `snake_case`: `extract_live_call_origin_phone()`, `normalize_phone()`, `validate_availability_payload()`
 - Private/internal functions start with underscore: `_build_request()`, `_log_registered_routes()`, `_normalize_path()`
@@ -161,11 +162,11 @@ actually works, not just describing it.
 - Use `@dataclass(frozen=True)` for immutable data structures: `CallSession` in tests uses non-frozen dataclass with methods
 - Frozen dataclasses for pure data: `DailyActivity`, `DailyDigest`, `Settings` (frozen dataclass with factory method `from_env()`)
 - Field defaults use `field(default_factory=...)` for mutable types:
-- Dependency injection through constructor: `BookingOnlineAvailabilityChecker(fetcher)` accepts optional fetcher
+- Dependency injection through constructor: `SyntheticReservationStore(storage_path=..., ttl=...)` accepts its persistence path and TTL
 - Stateless services with methods: `CallbackRequestSmsService`, `ConversationAnonymizer`
 - Factory methods on configuration objects: `Settings.from_env()` as classmethod
 - No barrel files (no `__init__.py` re-exports)
-- Direct imports from modules: `from app.services.availability_checker import BookingOnlineAvailabilityChecker`
+- Direct imports from modules: `from app.services.reservation_provider import reservation_provider`
 - `@cached_property` for computed values computed once: `twilio_client` property
 - `@property` for simple computed values: `has_complete_twilio_config`, `normalized_public_base_url`
 - `@classmethod` for factory methods: `Settings.from_env()`
@@ -198,7 +199,7 @@ actually works, not just describing it.
 | Realtime Tools | Tool execution dispatch (availability, SMS tools) | `app/services/realtime_tools.py` |
 | Runtime State | In-memory session storage by call_sid/stream_sid | `app/services/runtime_state.py` |
 | Transcript Service | Call logging to JSON files with anonymization | `app/services/transcript_service.py` |
-| Availability Checker | BookingOnline calendar availability checking | `app/services/availability_checker.py` |
+| Synthetic Reservation Store | In-process, self-contained availability and reservation store reached via the provider seam | `app/services/synthetic_reservation_store.py` |
 | Conversation Anonymizer | LLM-powered privacy-preserving call summaries | `app/services/conversation_anonymizer.py` |
 | Call Config | Configuration builder for individual calls | `app/services/call_config.py` |
 | Settings | Environment-based application configuration | `app/config/settings.py` |
@@ -262,8 +263,8 @@ actually works, not just describing it.
 - Purpose: Represents one voice call with full lifecycle (created → in_progress → completed)
 - Examples: `app/models/call.py:44-99`
 - Pattern: Mutable dataclass with methods to bind stream, finish, mark errors, append transcripts
-- Purpose: Structured result from BookingOnline calendar check, includes status, available units with pricing, assistant message
-- Examples: `app/models/availability.py`
+- Purpose: Structured result from the in-process synthetic store's availability check, includes status, available units with pricing, assistant message
+- Examples: `app/models/reservation.py` (`AvailabilityResponse`)
 - Pattern: Immutable dataclass with `to_dict()` method for serialization to OpenAI
 - Purpose: Per-call customization of system message, voice, language, temperature, reasoning effort
 - Examples: `app/models/call.py:17-24`
@@ -271,9 +272,9 @@ actually works, not just describing it.
 - Purpose: Map from call_sid/stream_sid to active CallSession, allowing session lookup during async operations
 - Examples: `app/services/runtime_state.py:6-120`
 - Pattern: Simple dict-based store; no persistence; sessions removed on disconnect or error
-- Purpose: Orchestrate calendar fetch → HTML parse → calendar interpretation for availability queries
-- Examples: `app/services/availability_checker.py:33-92`
-- Pattern: Async class with private `_check_unit()` helper; supports concurrent unit checks with `asyncio` gathering
+- Purpose: Compute availability status entirely in-process from the static unit registry and the TTL-filtered reservation file
+- Examples: `app/services/synthetic_reservation_store.py`
+- Pattern: Class guarded by a single lock covering check-then-write; supports concurrent unit checks without any outbound network call
 
 ## Entry Points
 
@@ -319,7 +320,7 @@ actually works, not just describing it.
 - Tool handlers (availability, SMS) return structured error responses to OpenAI instead of raising
 - Settings validation at startup fails fast with `SettingsError` if required env vars missing
 - `try/except` with `logger.exception()` for unexpected errors
-- Custom exceptions (`SettingsError`, `AvailabilityValidationError`, `BookingOnlineFetchError`) for domain-specific errors
+- Custom exceptions (`SettingsError`, `ReservationValidationError`) for domain-specific errors
 - Structured error responses from tool handlers include `error_code` and `message_for_assistant` fields for OpenAI to relay to user
 - TwiML error responses for call failures (voice message to caller, not exception traceback)
 
@@ -328,7 +329,7 @@ actually works, not just describing it.
 - Python standard `logging` module configured at startup in `settings.py:17`
 - Structured log messages with context (e.g., `stream_sid`, `error_code`)
 - No secrets logged (phone numbers masked, API keys not printed)
-- Request payload validation in route handlers (e.g., `validate_availability_payload()` in `availability_checker.py:95-118`)
+- Request payload validation in route handlers (e.g., `validate_availability_payload()` in `synthetic_reservation_store.py`)
 - CallConfig defaults from settings; per-call overrides validated before use
 - Twilio signature verification (not implemented—assumes reverse proxy handles this)
 - Admin routes use HTTP Basic Auth: username from `ADMIN_PROMPT_USERNAME`, password from `ADMIN_PROMPT_PASSWORD` (`app/routes/admin_prompt.py`)

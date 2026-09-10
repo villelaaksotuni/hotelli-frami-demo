@@ -29,13 +29,28 @@ class AnonymizedConversationSummary:
     outcome: str
     topics: list[str]
     follow_up_needed: bool
-    booking_link_shared: bool
+    reservation_created: bool
     first_user_utterance_redacted: str
     redaction_notes: list[str]
     anonymization_method: str
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def reservation_count_for(session: CallSession) -> int:
+    """Count of reservations recorded server-side for this session's call.
+
+    Reads session.metadata["create_reservation_history"] — the record the
+    synthetic reservation store appends to only when a reservation is actually
+    confirmed. Degrades to 0 on any malformed shape (absent, not a list, or a
+    list holding non-dict entries) rather than raising mid-log-write, mirroring
+    prompt_store._read_state_unlocked's fail-open-to-empty discipline.
+    """
+    history = (session.metadata or {}).get("create_reservation_history")
+    if not isinstance(history, list):
+        return 0
+    return sum(1 for entry in history if isinstance(entry, dict))
 
 
 class ConversationAnonymizer:
@@ -57,6 +72,7 @@ class ConversationAnonymizer:
         if not self._enabled:
             return self._build_fallback_summary(
                 dialogue_turns,
+                session=session,
                 reason="llm_anonymization_disabled",
             )
 
@@ -70,6 +86,7 @@ class ConversationAnonymizer:
             )
             return self._build_fallback_summary(
                 dialogue_turns,
+                session=session,
                 reason="llm_anonymization_fallback",
             )
 
@@ -101,7 +118,7 @@ class ConversationAnonymizer:
             outcome=self._clean_text(parsed.get("outcome"), fallback="Lopputulos jäi epäselväksi."),
             topics=self._clean_topics(parsed.get("topics")),
             follow_up_needed=bool(parsed.get("follow_up_needed", False)),
-            booking_link_shared=bool(parsed.get("booking_link_shared", False)),
+            reservation_created=reservation_count_for(session) > 0,
             first_user_utterance_redacted=self._clean_text(
                 parsed.get("first_user_utterance_redacted"),
                 fallback="",
@@ -181,7 +198,6 @@ class ConversationAnonymizer:
                                 "maxItems": 6,
                             },
                             "follow_up_needed": {"type": "boolean"},
-                            "booking_link_shared": {"type": "boolean"},
                             "first_user_utterance_redacted": {"type": "string"},
                             "redaction_notes": {
                                 "type": "array",
@@ -195,7 +211,6 @@ class ConversationAnonymizer:
                             "outcome",
                             "topics",
                             "follow_up_needed",
-                            "booking_link_shared",
                             "first_user_utterance_redacted",
                             "redaction_notes",
                         ],
@@ -225,13 +240,10 @@ class ConversationAnonymizer:
         self,
         dialogue_turns: ConversationLog,
         *,
+        session: CallSession,
         reason: str,
     ) -> AnonymizedConversationSummary:
         first_user_utterance = self._first_user_utterance(dialogue_turns)
-        # No reliable transcript signal exists for this once the booking-link SMS
-        # tool was removed (02-02); a synthetic reservation confirmation is read
-        # back verbally instead of texted as a link.
-        booking_link_shared = False
         topics = self._infer_topics(self._format_dialogue_turns(dialogue_turns))
         redacted_utterance = self._build_fallback_opening_note(first_user_utterance, topics)
         return AnonymizedConversationSummary(
@@ -244,7 +256,7 @@ class ConversationAnonymizer:
             outcome="Lopputulosta ei voitu tiivistää, koska anonymisoitu yhteenveto ei ollut käytettävissä.",
             topics=topics,
             follow_up_needed=False,
-            booking_link_shared=booking_link_shared,
+            reservation_created=reservation_count_for(session) > 0,
             first_user_utterance_redacted=redacted_utterance,
             redaction_notes=[self._translate_fallback_reason(reason), "raakaa_transkriptiota_ei_tallennettu"],
             anonymization_method="fallback_redaction",

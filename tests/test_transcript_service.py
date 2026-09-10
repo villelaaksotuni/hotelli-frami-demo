@@ -43,7 +43,7 @@ class TranscriptServiceTests(unittest.TestCase):
             outcome="Varausta koskevat tiedot annettiin.",
             topics=["varaus"],
             follow_up_needed=False,
-            booking_link_shared=False,
+            reservation_created=False,
             first_user_utterance_redacted="Asiakas kertoi numeronsa [puhelin].",
             redaction_notes=["puhelinnumero poistettu"],
             anonymization_method="openai_llm",
@@ -57,6 +57,49 @@ class TranscriptServiceTests(unittest.TestCase):
         self.assertNotIn("dialogue_turns", record)
         self.assertEqual(record["metadata"]["counterparty_label"], "***4567")
         self.assertEqual(record["anonymized_summary"]["summary"], summary.summary)
+
+    def test_redacted_metadata_carries_reservation_signal_with_no_caller_identifying_key(self):
+        session = CallSession(
+            call_sid="CA321",
+            stream_sid="MZ321",
+            config=CallConfig(language="fi", voice="shimmer", temperature=0.6),
+            metadata={
+                "direction": "inbound",
+                "from_number": "+358401234567",
+                "create_reservation_history": [
+                    {
+                        "unit_id": "jokipuistopark-asunto-2",
+                        "arrival_date": "2026-10-01",
+                        "departure_date": "2026-10-03",
+                        "reservation_id": "R1",
+                    }
+                ],
+            },
+            status="completed",
+            created_at="2026-05-19T08:00:00+00:00",
+            started_at="2026-05-19T08:01:00+00:00",
+            ended_at="2026-05-19T08:03:00+00:00",
+        )
+        summary = AnonymizedConversationSummary(
+            summary="Asiakas varasi majoituksen.",
+            caller_intent="Varaus.",
+            outcome="Varaus tehtiin.",
+            topics=["varaus"],
+            follow_up_needed=False,
+            reservation_created=True,
+            first_user_utterance_redacted="Asiakas halusi varata huoneen.",
+            redaction_notes=[],
+            anonymization_method="openai_llm",
+        )
+
+        record = _build_session_record(session, summary.to_dict())
+
+        self.assertTrue(record["metadata"]["reservation_created"])
+        self.assertEqual(record["metadata"]["reservation_count"], 1)
+        self.assertEqual(
+            set(record["metadata"].keys()),
+            {"direction", "counterparty_label", "has_last_error", "reservation_created", "reservation_count"},
+        )
 
     def test_write_session_logs_creates_session_and_summary_files_without_raw_turns_file(self):
         session = CallSession(
@@ -79,7 +122,7 @@ class TranscriptServiceTests(unittest.TestCase):
             outcome="Saatavuusohje annettiin.",
             topics=["saatavuus"],
             follow_up_needed=False,
-            booking_link_shared=False,
+            reservation_created=False,
             first_user_utterance_redacted="Asiakas kysyi huoneen saatavuutta kesäkuussa.",
             redaction_notes=["päivämäärä yleistetty"],
             anonymization_method="fallback_redaction",

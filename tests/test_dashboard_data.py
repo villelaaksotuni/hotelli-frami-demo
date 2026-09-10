@@ -45,7 +45,7 @@ class DashboardDataTests(unittest.TestCase):
                     "outcome": "Saatavuus vahvistettiin.",
                     "topics": ["booking", "availability"],
                     "follow_up_needed": False,
-                    "booking_link_shared": True,
+                    "reservation_created": True,
                     "first_user_utterance_redacted": "Tarvitsen huoneen ensi viikolle.",
                     "redaction_notes": [],
                     "anonymization_method": "openai_llm",
@@ -57,7 +57,7 @@ class DashboardDataTests(unittest.TestCase):
                     "topics": ["booking", "availability"],
                     "topic_labels": ["Varaus", "Saatavuus"],
                     "follow_up_needed": False,
-                    "booking_link_shared": True,
+                    "reservation_created": True,
                     "has_error": False,
                     "resolution_status": "resolved",
                     "resolution_label": "Ratkaistu",
@@ -91,7 +91,7 @@ class DashboardDataTests(unittest.TestCase):
                     "outcome": "Tarvitaan jatkotoimia.",
                     "topics": ["hinta"],
                     "follow_up_needed": True,
-                    "booking_link_shared": False,
+                    "reservation_created": False,
                     "first_user_utterance_redacted": "Paljonko yö maksaa?",
                     "redaction_notes": [],
                     "anonymization_method": "openai_llm",
@@ -108,13 +108,88 @@ class DashboardDataTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["resolved_calls"], 1)
         self.assertEqual(payload["summary"]["unresolved_calls"], 1)
         self.assertEqual(payload["summary"]["follow_up_calls"], 1)
-        self.assertEqual(payload["summary"]["booking_link_calls"], 1)
+        self.assertEqual(payload["summary"]["reservation_calls"], 1)
         self.assertEqual(payload["summary"]["inbound_calls"], 1)
         self.assertEqual(payload["summary"]["outbound_calls"], 1)
         self.assertEqual(payload["summary"]["average_duration_seconds"], 135.0)
         self.assertEqual(payload["summary"]["resolution_rate"], 50.0)
         self.assertEqual(payload["recent_calls"][0]["resolution_label"], "Ratkaistu")
         self.assertEqual(payload["topic_breakdown"][0]["label"], "Varaus")
+
+    def test_booking_words_in_dialogue_with_false_analytics_signal_are_not_counted(self):
+        self._write_session(
+            "session_booking_words_no_reservation.json",
+            {
+                "call_sid": "CA4",
+                "stream_sid": "MZ4",
+                "status": "completed",
+                "created_at": "2026-05-20T09:00:00+00:00",
+                "started_at": "2026-05-20T09:00:00+00:00",
+                "ended_at": "2026-05-20T09:01:00+00:00",
+                "duration_seconds": 60,
+                "termination_reason": "twilio_stop",
+                "last_error": None,
+                "metadata": {
+                    "direction": "inbound",
+                    "counterparty_label": "***5555",
+                    "reservation_created": False,
+                },
+                "dialogue_turns": [
+                    {"speaker": "user", "text": "I would like to book a reservation, do you have a room?"},
+                    {"speaker": "assistant", "text": "Let me check availability."},
+                ],
+                "transcript_turn_count": 2,
+            },
+        )
+
+        payload = self.service.build_dashboard_payload(
+            now=self._dt("2026-05-20T12:00:00+03:00"),
+        )
+
+        self.assertEqual(payload["summary"]["reservation_calls"], 0)
+        self.assertFalse(payload["recent_calls"][0]["reservation_created"])
+
+    def test_fixture_omitting_reservation_key_entirely_deserializes_with_signal_false(self):
+        self._write_session(
+            "session_no_reservation_key.json",
+            {
+                "call_sid": "CA5",
+                "stream_sid": "MZ5",
+                "status": "completed",
+                "created_at": "2026-05-20T10:00:00+00:00",
+                "started_at": "2026-05-20T10:00:00+00:00",
+                "ended_at": "2026-05-20T10:01:00+00:00",
+                "duration_seconds": 60,
+                "termination_reason": "twilio_stop",
+                "last_error": None,
+                "metadata": {
+                    "direction": "inbound",
+                    "counterparty_label": "***6666",
+                },
+                "analytics": {
+                    "direction": "inbound",
+                    "direction_label": "Saapuva",
+                    "counterparty_label": "***6666",
+                    "topics": [],
+                    "topic_labels": [],
+                    "follow_up_needed": False,
+                    "has_error": False,
+                    "resolution_status": "resolved",
+                    "resolution_label": "Ratkaistu",
+                    "summary_preview": "",
+                    "caller_intent": "",
+                    "outcome": "",
+                    "transcript_turn_count": 0,
+                },
+                "transcript_turn_count": 0,
+            },
+        )
+
+        payload = self.service.build_dashboard_payload(
+            now=self._dt("2026-05-20T12:00:00+03:00"),
+        )
+
+        self.assertFalse(payload["recent_calls"][0]["reservation_created"])
 
     def test_build_dashboard_payload_supports_legacy_session_logs(self):
         self._write_session(

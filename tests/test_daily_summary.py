@@ -53,7 +53,7 @@ class DailySummaryTests(unittest.TestCase):
             duration_seconds=300,
             turns=[
                 {"speaker": "user", "text": "I want to book a room for June."},
-                {"speaker": "assistant", "text": "I can check availability and share a bookingonline link."},
+                {"speaker": "assistant", "text": "I can check availability for you right away."},
             ],
         )
         self._write_session(
@@ -86,6 +86,24 @@ class DailySummaryTests(unittest.TestCase):
         self.assertIn("pricing", digest.topic_counts)
         self.assertIn("Nostot:", digest.sms_body)
         self.assertIn("+358401111111", digest.sms_body)
+
+    def test_booking_words_with_false_recorded_signal_do_not_mark_reservation_made(self):
+        self._write_session(
+            "session_booking_words_no_reservation.json",
+            ended_at="2026-05-18T13:00:00+00:00",
+            direction="outbound",
+            to_number="+358404444444",
+            duration_seconds=90,
+            turns=[
+                {"speaker": "user", "text": "I want to book a room, do you have availability?"},
+                {"speaker": "assistant", "text": "Let me check availability for you."},
+            ],
+        )
+
+        digest = self.service.build_digest(summary_date=self._local_date("2026-05-18"))
+
+        self.assertEqual(digest.total_activities, 1)
+        self.assertNotIn("varaus tehty", digest.activities[0].highlight)
 
     def test_send_digest_records_history_and_prevents_duplicate_send(self):
         self._write_session(
@@ -134,7 +152,7 @@ class DailySummaryTests(unittest.TestCase):
                 "outcome": "Saatavuus vahvistettiin ja varauslinkki jaettiin.",
                 "topics": ["varaus", "saatavuus"],
                 "follow_up_needed": False,
-                "booking_link_shared": True,
+                "reservation_created": True,
                 "first_user_utterance_redacted": "Asiakas tarvitsi huoneen kesäkuun puoliväliin.",
                 "redaction_notes": ["päivämäärä yleistetty"],
                 "anonymization_method": "openai_llm",

@@ -2,7 +2,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from app.config.settings import Settings, SettingsError
+from app.config.settings import LEGACY_BOOKING_ENV_VARS, LEGACY_BOOKING_HOST_FRAGMENT, Settings, SettingsError
 
 
 class SettingsTests(unittest.TestCase):
@@ -207,6 +207,87 @@ class SettingsTests(unittest.TestCase):
 
         with patch("app.config.settings.find_spec", return_value=object()):
             settings.validate_runtime_dependencies()
+
+
+class LegacyBookingConfigGuardTests(unittest.TestCase):
+    # References LEGACY_BOOKING_ENV_VARS/LEGACY_BOOKING_HOST_FRAGMENT from the
+    # module under test rather than hardcoding the retired vendor's literal
+    # variable names here, so this test file itself stays out of the
+    # whole-repository denylist gate (app/config/settings.py is the only
+    # permitted occurrence).
+    _CALENDAR_VAR, _TEEMA_VAR, _MYYJA_VAR = LEGACY_BOOKING_ENV_VARS
+
+    def test_clean_environment_does_not_raise(self):
+        with patch.dict(os.environ, {}, clear=True):
+            settings = Settings.from_env()
+            settings.validate_no_legacy_booking_config()
+
+    def test_raises_when_teema_id_is_set(self):
+        with patch.dict(
+            os.environ,
+            {self._TEEMA_VAR: "9101"},
+            clear=True,
+        ):
+            settings = Settings.from_env()
+            with self.assertRaises(SettingsError) as context:
+                settings.validate_no_legacy_booking_config()
+
+        self.assertIn(self._TEEMA_VAR, str(context.exception))
+
+    def test_raises_once_naming_both_offending_variables(self):
+        with patch.dict(
+            os.environ,
+            {
+                self._CALENDAR_VAR: f"https://{LEGACY_BOOKING_HOST_FRAGMENT}/x",
+                self._MYYJA_VAR: "9202",
+            },
+            clear=True,
+        ):
+            settings = Settings.from_env()
+            with self.assertRaises(SettingsError) as context:
+                settings.validate_no_legacy_booking_config()
+
+        message = str(context.exception)
+        self.assertIn(self._CALENDAR_VAR, message)
+        self.assertIn(self._MYYJA_VAR, message)
+
+    def test_empty_or_whitespace_only_value_does_not_raise(self):
+        with patch.dict(
+            os.environ,
+            {
+                self._TEEMA_VAR: "",
+                self._MYYJA_VAR: "   ",
+            },
+            clear=True,
+        ):
+            settings = Settings.from_env()
+            settings.validate_no_legacy_booking_config()
+
+    def test_renamed_variable_pointing_at_legacy_host_is_still_caught(self):
+        with patch.dict(
+            os.environ,
+            {
+                "SOME_RENAMED_CALENDAR_VAR": f"https://{LEGACY_BOOKING_HOST_FRAGMENT}/stable/x",
+            },
+            clear=True,
+        ):
+            settings = Settings.from_env()
+            with self.assertRaises(SettingsError) as context:
+                settings.validate_no_legacy_booking_config()
+
+        self.assertIn("SOME_RENAMED_CALENDAR_VAR", str(context.exception))
+
+    def test_reads_live_process_environment_not_settings_instance(self):
+        with patch.dict(os.environ, {}, clear=True):
+            settings = Settings.from_env()
+
+        with patch.dict(
+            os.environ,
+            {self._TEEMA_VAR: "9101"},
+            clear=True,
+        ):
+            with self.assertRaises(SettingsError):
+                settings.validate_no_legacy_booking_config()
 
 
 if __name__ == "__main__":

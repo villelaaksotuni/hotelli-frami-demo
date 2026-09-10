@@ -197,6 +197,19 @@ class SettingsError(ValueError):
     """Raised when required environment configuration is missing or invalid."""
 
 
+# These values exist only to be rejected. They name the retired real-world booking
+# vendor's environment variables and calendar host, which the synthetic reservation
+# store fully replaced (Phase 2). This module is deliberately the single place in the
+# repository where they appear — see validate_no_legacy_booking_config below — so a
+# whole-repository grep for this string finds only this denylist, never a live path.
+LEGACY_BOOKING_ENV_VARS = (
+    "BOOKINGONLINE_CALENDAR_BASE_URL",
+    "BOOKINGONLINE_TEEMA_ID",
+    "BOOKINGONLINE_MYYJA_ID",
+)
+LEGACY_BOOKING_HOST_FRAGMENT = "booking.hotelliframi.invalid"
+
+
 @dataclass(frozen=True)
 class Settings:
     openai_api_key: Optional[str]
@@ -549,6 +562,25 @@ class Settings:
         if missing:
             raise SettingsError(
                 "Missing required Twilio environment variables: " + ", ".join(missing)
+            )
+
+    def validate_no_legacy_booking_config(self) -> None:
+        offending: list[str] = []
+        for name in LEGACY_BOOKING_ENV_VARS:
+            value = os.getenv(name)
+            if value is not None and value.strip():
+                offending.append(name)
+        for name, value in os.environ.items():
+            if value and LEGACY_BOOKING_HOST_FRAGMENT.lower() in value.lower():
+                offending.append(name)
+        if offending:
+            raise SettingsError(
+                "Legacy booking-vendor environment variable(s) detected: "
+                + ", ".join(sorted(set(offending)))
+                + ". The synthetic reservation store fully replaced the retired "
+                "booking integration and no path back to it exists — these "
+                "variables must be removed from the deployment environment before "
+                "the app can start."
             )
 
     def validate_startup(self) -> None:
