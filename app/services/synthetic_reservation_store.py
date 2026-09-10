@@ -238,8 +238,9 @@ class SyntheticReservationStore:
     def _find_reservation_by_id(self, reservation_id: Optional[str]) -> Optional[Reservation]:
         if not reservation_id:
             return None
-        with self._lock:
-            state = self._read_state_unlocked()
+        # Best-effort lookup only, used to echo an already-created reservation back
+        # in a duplicate-dispatch result; not part of the create/write critical section.
+        state = self._read_state_unlocked()
         for record in state.get("reservations", []):
             if record.get("reservation_id") == reservation_id:
                 return Reservation(**record)
