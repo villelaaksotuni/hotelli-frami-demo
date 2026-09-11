@@ -124,7 +124,7 @@ LIVE_HTML = """<!DOCTYPE html>
     }
 
     .transcript-panel {
-      min-height: 420px;
+      min-height: 480px;
       display: grid;
       gap: 16px;
       align-content: start;
@@ -152,7 +152,35 @@ LIVE_HTML = """<!DOCTYPE html>
       color: var(--ink);
       font-family: inherit;
       font-size: 13px;
-      cursor: not-allowed;
+      cursor: pointer;
+    }
+
+    #transcript-list {
+      max-height: 420px;
+      overflow-y: auto;
+      display: grid;
+      gap: 12px;
+      padding-right: 4px;
+    }
+
+    .transcript-line {
+      display: grid;
+      gap: 2px;
+    }
+
+    .transcript-speaker {
+      margin: 0;
+      font-size: 13px;
+      line-height: 1.4;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .transcript-text {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.5;
+      overflow-wrap: break-word;
     }
 
     .board-panel {
@@ -197,8 +225,8 @@ LIVE_HTML = """<!DOCTYPE html>
             <button
               id="transcript-scroll-lock"
               type="button"
-              disabled
               aria-label="Lukitse vieritys viimeisimpaan viestiin"
+              aria-pressed="true"
             >Lukitse alimpaan</button>
           </div>
           <div id="transcript-list">Yhdistetaan live-nakymaan...</div>
@@ -229,6 +257,8 @@ LIVE_HTML = """<!DOCTYPE html>
     const connDot = document.getElementById("conn-dot");
     const connLabel = document.getElementById("conn-label");
     const connDetail = document.getElementById("conn-detail");
+    const transcriptList = document.getElementById("transcript-list");
+    const transcriptScrollLock = document.getElementById("transcript-scroll-lock");
 
     const escapeHtml = (value) =>
       String(value ?? "")
@@ -237,6 +267,74 @@ LIVE_HTML = """<!DOCTYPE html>
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#39;");
+
+    const TRANSCRIPT_SPEAKER_LABELS = {
+      user: "Soittaja",
+      assistant: "Hotelli Framin avustaja",
+    };
+    const TRANSCRIPT_SCROLL_TOLERANCE_PX = 24;
+
+    let transcriptAutoScroll = true;
+    let transcriptReady = false;
+
+    function isTranscriptScrolledToBottom() {
+      return (
+        transcriptList.scrollHeight -
+          transcriptList.scrollTop -
+          transcriptList.clientHeight <=
+        TRANSCRIPT_SCROLL_TOLERANCE_PX
+      );
+    }
+
+    function scrollTranscriptToBottom() {
+      transcriptList.scrollTop = transcriptList.scrollHeight;
+    }
+
+    function clearTranscript() {
+      transcriptList.textContent = "";
+      transcriptReady = true;
+      transcriptAutoScroll = true;
+      transcriptScrollLock.setAttribute("aria-pressed", "true");
+    }
+
+    function appendTranscriptLine(speaker, text) {
+      if (!transcriptReady) {
+        clearTranscript();
+      }
+
+      const line = document.createElement("div");
+      line.className = "transcript-line";
+
+      const speakerEl = document.createElement("p");
+      speakerEl.className = "transcript-speaker";
+      speakerEl.textContent = TRANSCRIPT_SPEAKER_LABELS[speaker] || speaker;
+
+      const textEl = document.createElement("p");
+      textEl.className = "transcript-text";
+      textEl.textContent = text;
+
+      line.appendChild(speakerEl);
+      line.appendChild(textEl);
+      transcriptList.appendChild(line);
+
+      if (transcriptAutoScroll) {
+        scrollTranscriptToBottom();
+      }
+    }
+
+    transcriptList.addEventListener("scroll", () => {
+      transcriptAutoScroll = isTranscriptScrolledToBottom();
+      transcriptScrollLock.setAttribute(
+        "aria-pressed",
+        transcriptAutoScroll ? "true" : "false"
+      );
+    });
+
+    transcriptScrollLock.addEventListener("click", () => {
+      transcriptAutoScroll = true;
+      transcriptScrollLock.setAttribute("aria-pressed", "true");
+      scrollTranscriptToBottom();
+    });
 
     const STATUS_LABELS = {
       ringing: "Puhelu soi",
@@ -293,21 +391,23 @@ LIVE_HTML = """<!DOCTYPE html>
     function renderIdle() {
       currentStatus = null;
       statusChip.className = "";
+      transcriptReady = false;
       CALL_PANEL_IDS.forEach((id) =>
         setPanelHeadingBody(id, IDLE_HEADING, IDLE_BODY)
       );
     }
 
     function clearNonStatusLoadingCopy() {
-      ["transcript-list", "agent-state", "capability-list"].forEach((id) =>
-        setPanelText(id, "")
-      );
+      ["agent-state", "capability-list"].forEach((id) => setPanelText(id, ""));
     }
 
     function renderStatus(state) {
       if (!state) {
         renderIdle();
         return;
+      }
+      if (state === "ringing") {
+        clearTranscript();
       }
       currentStatus = state;
       clearNonStatusLoadingCopy();
@@ -348,6 +448,8 @@ LIVE_HTML = """<!DOCTYPE html>
         renderStatus(frame.state);
       } else if (frame.type === "snapshot") {
         renderStatus(frame.status ? frame.status.state : null);
+      } else if (frame.type === "transcript") {
+        appendTranscriptLine(frame.speaker, frame.text);
       }
     };
   </script>

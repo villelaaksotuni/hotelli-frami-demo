@@ -1,6 +1,58 @@
+import asyncio
+import json
+import pathlib
+import re
 import unittest
 
-from app.services.live_broadcast import LiveBroadcastHub
+from starlette.requests import Request
+
+from app.routes.live import live_page, live_stream
+from app.services.live_broadcast import LiveBroadcastHub, live_broadcast_hub
+
+
+def _build_stream_request(receive) -> Request:
+    return Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "https",
+            "path": "/api/live/stream",
+            "raw_path": b"/api/live/stream",
+            "root_path": "",
+            "query_string": b"",
+            "headers": [],
+            "client": ("127.0.0.1", 12345),
+            "server": ("demo.example.com", 443),
+        },
+        receive,
+    )
+
+
+def _hanging_receive():
+    async def receive():
+        await asyncio.sleep(3600)
+        return {"type": "http.disconnect"}
+
+    return receive
+
+
+def _build_page_request() -> Request:
+    return Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "https",
+            "path": "/live",
+            "raw_path": b"/live",
+            "root_path": "",
+            "query_string": b"",
+            "headers": [],
+            "client": ("127.0.0.1", 12345),
+            "server": ("demo.example.com", 443),
+        }
+    )
 
 
 class LiveTranscriptHubTests(unittest.TestCase):
@@ -44,6 +96,64 @@ class LiveTranscriptHubTests(unittest.TestCase):
 
         snapshot = hub.state_snapshot()
         self.assertNotIn("transcript", snapshot)
+
+
+class LiveTranscriptSseEndToEndTests(unittest.TestCase):
+    def tearDown(self):
+        live_broadcast_hub.reset_call_state()
+
+    def test_sse_subscriber_receives_redacted_transcript_frame(self):
+        async def scenario():
+            request = _build_stream_request(_hanging_receive())
+            response = await live_stream(request)
+            body_iterator = response.body_iterator
+
+            first_frame = await asyncio.wait_for(body_iterator.__anext__(), timeout=1)
+            first_parsed = json.loads(first_frame.removeprefix("data: ").strip())
+            self.assertEqual(first_parsed["type"], "snapshot")
+
+            live_broadcast_hub.publish_transcript(
+                speaker="user", text="soita 040 123 4567"
+            )
+
+            second_frame = await asyncio.wait_for(body_iterator.__anext__(), timeout=1)
+            second_parsed = json.loads(second_frame.removeprefix("data: ").strip())
+            self.assertEqual(second_parsed["type"], "transcript")
+            self.assertIn("[puhelin]", second_parsed["text"])
+            self.assertNotIn("4567", second_parsed["text"])
+
+            await body_iterator.aclose()
+
+        asyncio.run(scenario())
+
+
+class VoicePublishTranscriptSourceTests(unittest.TestCase):
+    def test_exactly_two_unawaited_publish_transcript_call_sites(self):
+        voice_source = pathlib.Path("app/routes/voice.py").read_text(encoding="utf-8")
+
+        call_sites = re.findall(r"live_broadcast_hub\.publish_transcript\(", voice_source)
+        self.assertEqual(len(call_sites), 2)
+        self.assertNotIn("await live_broadcast_hub", voice_source)
+
+
+class LiveTranscriptPanelHtmlTests(unittest.TestCase):
+    def setUp(self):
+        response = asyncio.run(live_page(_build_page_request()))
+        self.body = response.body.decode("utf-8")
+
+    def test_transcript_panel_declares_max_height_and_overflow_scroll(self):
+        self.assertIn("#transcript-list", self.body)
+        transcript_rule_match = re.search(
+            r"#transcript-list\s*\{([^}]*)\}", self.body
+        )
+        self.assertIsNotNone(transcript_rule_match)
+        rule_body = transcript_rule_match.group(1)
+        self.assertIn("max-height", rule_body)
+        self.assertIn("overflow-y", rule_body)
+
+    def test_no_truncation_rule_present(self):
+        self.assertNotIn("text-overflow: ellipsis", self.body)
+        self.assertNotIn("-webkit-line-clamp", self.body)
 
 
 if __name__ == "__main__":
