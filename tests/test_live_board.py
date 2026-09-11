@@ -304,5 +304,70 @@ class SnapshotFrameBoardKeyTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsInstance(snapshot["board"], list)
 
 
+class RenderedLiveBoardHtmlTests(unittest.TestCase):
+    def setUp(self):
+        response = asyncio.run(live_page(_build_page_request()))
+        self.body = response.body.decode("utf-8")
+
+    def test_board_distinct_empty_copy_present_and_differs_from_shared_idle_heading(self):
+        self.assertIn("Ei viela demovarauksia", self.body)
+        self.assertIn(
+            "Varaukset ilmestyvat tahan heti, kun joku tekee sellaisen puhelun aikana.",
+            self.body,
+        )
+        self.assertIn("Ei aktiivista puhelua juuri nyt", self.body)
+        self.assertNotEqual("Ei viela demovarauksia", "Ei aktiivista puhelua juuri nyt")
+
+    def test_success_colour_scoped_to_board_arrival_highlight_rule(self):
+        match = re.search(r"\.board-row-new\s*\{([^}]*)\}", self.body)
+        self.assertIsNotNone(match, "expected a .board-row-new CSS rule")
+        self.assertIn("#2f6f50", match.group(1))
+
+    def test_accent_colour_absent_from_every_board_scoped_rule(self):
+        found_any_board_rule = False
+        for match in re.finditer(r"(\.board[a-zA-Z-]*|#board-list)\s*\{([^}]*)\}", self.body):
+            found_any_board_rule = True
+            self.assertNotIn("#b85c38", match.group(2), f"accent leaked into {match.group(1)}")
+            self.assertNotIn("var(--accent)", match.group(2), f"accent leaked into {match.group(1)}")
+        self.assertTrue(found_any_board_rule, "expected at least one board-scoped CSS rule")
+
+    def test_no_innerhtml_assignment(self):
+        self.assertNotIn(".innerHTML =", self.body)
+        self.assertNotIn(".innerHTML=", self.body)
+
+    def test_board_element_not_referenced_in_shared_idle_or_ringing_reset_handlers(self):
+        idle_match = re.search(r"function renderIdle\(\)\s*\{(.*?)\n    \}", self.body, re.DOTALL)
+        self.assertIsNotNone(idle_match)
+        self.assertNotIn("board-list", idle_match.group(1))
+        self.assertNotIn("boardList", idle_match.group(1))
+
+        ringing_match = re.search(
+            r"if \(state === \"ringing\"\)\s*\{(.*?)\}", self.body, re.DOTALL
+        )
+        self.assertIsNotNone(ringing_match)
+        self.assertNotIn("board-list", ringing_match.group(1))
+        self.assertNotIn("boardList", ringing_match.group(1))
+
+    def test_client_side_trims_prepended_rows_to_the_board_limit(self):
+        self.assertIn("LIVE_BOARD_LIMIT", self.body)
+        prepend_match = re.search(
+            r"function prependBoardReservation\(entry\)\s*\{(.*?)\n    \}", self.body, re.DOTALL
+        )
+        self.assertIsNotNone(prepend_match)
+        self.assertIn("LIVE_BOARD_LIMIT", prepend_match.group(1))
+        self.assertIn(".remove()", prepend_match.group(1))
+
+    def test_board_row_built_without_innerhtml_via_createelement_and_textcontent(self):
+        board_fn_match = re.search(
+            r"function buildBoardRow\(entry\)\s*\{(.*?)\n    \}", self.body, re.DOTALL
+        )
+        self.assertIsNotNone(board_fn_match)
+        self.assertIn("createElement", board_fn_match.group(1))
+        self.assertIn("textContent", board_fn_match.group(1))
+
+    def test_full_suite_serialised_limit_matches_python_constant(self):
+        self.assertIn(json.dumps(LIVE_BOARD_LIMIT), self.body)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -257,6 +257,45 @@ LIVE_HTML = """<!DOCTYPE html>
       width: 100%;
     }
 
+    #board-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .board-row {
+      padding: 12px 16px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      display: grid;
+      gap: 4px;
+    }
+
+    .board-row-title {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.5;
+      font-weight: 700;
+    }
+
+    .board-row-stay,
+    .board-row-price {
+      margin: 0;
+    }
+
+    .board-row-new {
+      border-color: #2f6f50;
+      animation: board-row-flash 2s ease-out;
+    }
+
+    @keyframes board-row-flash {
+      from {
+        background: rgba(47, 111, 80, 0.16);
+      }
+      to {
+        background: transparent;
+      }
+    }
+
     .state-heading {
       margin: 0 0 8px;
       font-weight: 700;
@@ -324,6 +363,7 @@ LIVE_HTML = """<!DOCTYPE html>
   <script>
     const liveStreamUrl = __API_LIVE_STREAM_URL_JSON__;
     const CAPABILITY_EXAMPLES = __CAPABILITY_EXAMPLES_JSON__;
+    const LIVE_BOARD_LIMIT = __LIVE_BOARD_LIMIT_JSON__;
     const statusChip = document.getElementById("status-chip");
     const connDot = document.getElementById("conn-dot");
     const connLabel = document.getElementById("conn-label");
@@ -332,6 +372,7 @@ LIVE_HTML = """<!DOCTYPE html>
     const transcriptScrollLock = document.getElementById("transcript-scroll-lock");
     const agentStatePanel = document.getElementById("agent-state");
     const capabilityListPanel = document.getElementById("capability-list");
+    const boardList = document.getElementById("board-list");
 
     const escapeHtml = (value) =>
       String(value ?? "")
@@ -546,6 +587,77 @@ LIVE_HTML = """<!DOCTYPE html>
       }
     }
 
+    const BOARD_EMPTY_HEADING = "Ei viela demovarauksia";
+    const BOARD_EMPTY_BODY =
+      "Varaukset ilmestyvat tahan heti, kun joku tekee sellaisen puhelun aikana.";
+
+    function buildBoardRow(entry) {
+      const row = document.createElement("div");
+      row.className = "board-row";
+
+      const titleEl = document.createElement("p");
+      titleEl.className = "board-row-title";
+      titleEl.textContent = `${entry.unit_name} - ${entry.area}`;
+
+      const stayEl = document.createElement("p");
+      stayEl.className = "board-row-stay label";
+      stayEl.textContent = `${entry.arrival_date} - ${entry.departure_date} (${entry.nights} yota), ${entry.guests} vierasta`;
+
+      const priceEl = document.createElement("p");
+      priceEl.className = "board-row-price";
+      priceEl.textContent = `${entry.price_total} ${entry.currency}`;
+
+      row.appendChild(titleEl);
+      row.appendChild(stayEl);
+      row.appendChild(priceEl);
+      return row;
+    }
+
+    function renderBoardEmpty() {
+      boardList.textContent = "";
+      const headingEl = document.createElement("p");
+      headingEl.className = "state-heading";
+      headingEl.textContent = BOARD_EMPTY_HEADING;
+      const bodyEl = document.createElement("p");
+      bodyEl.className = "state-body";
+      bodyEl.textContent = BOARD_EMPTY_BODY;
+      boardList.appendChild(headingEl);
+      boardList.appendChild(bodyEl);
+    }
+
+    function renderBoardSnapshot(entries) {
+      boardList.textContent = "";
+      if (!entries || entries.length === 0) {
+        renderBoardEmpty();
+        return;
+      }
+      entries.forEach((entry) => {
+        boardList.appendChild(buildBoardRow(entry));
+      });
+    }
+
+    function prependBoardReservation(entry) {
+      if (!boardList.querySelector(".board-row")) {
+        boardList.textContent = "";
+      }
+
+      const row = buildBoardRow(entry);
+      row.classList.add("board-row-new");
+      row.addEventListener(
+        "animationend",
+        () => {
+          row.classList.remove("board-row-new");
+        },
+        { once: true }
+      );
+      boardList.insertBefore(row, boardList.firstChild);
+
+      const rows = boardList.querySelectorAll(".board-row");
+      for (let i = LIVE_BOARD_LIMIT; i < rows.length; i += 1) {
+        rows[i].remove();
+      }
+    }
+
     const STATUS_LABELS = {
       ringing: "Puhelu soi",
       connected: "Yhteys avattu",
@@ -665,12 +777,15 @@ LIVE_HTML = """<!DOCTYPE html>
           renderAgentState(frame.agent);
           renderCapabilityState(frame.capabilities);
         }
+        renderBoardSnapshot(frame.board);
       } else if (frame.type === "transcript") {
         appendTranscriptLine(frame.speaker, frame.text);
       } else if (frame.type === "agent") {
         renderAgentState(frame);
       } else if (frame.type === "capability") {
         markCapabilityLit(frame.tool);
+      } else if (frame.type === "reservation") {
+        prependBoardReservation(frame.reservation);
       }
     };
   </script>
@@ -738,10 +853,17 @@ async def live_page(request: Request) -> HTMLResponse:
 
 
 def _render_live_html(api_live_stream_url: str) -> str:
-    return LIVE_HTML.replace(
-        "__API_LIVE_STREAM_URL_JSON__",
-        json.dumps(api_live_stream_url),
-    ).replace(
-        "__CAPABILITY_EXAMPLES_JSON__",
-        json.dumps(CAPABILITY_EXAMPLES, ensure_ascii=False),
+    return (
+        LIVE_HTML.replace(
+            "__API_LIVE_STREAM_URL_JSON__",
+            json.dumps(api_live_stream_url),
+        )
+        .replace(
+            "__CAPABILITY_EXAMPLES_JSON__",
+            json.dumps(CAPABILITY_EXAMPLES, ensure_ascii=False),
+        )
+        .replace(
+            "__LIVE_BOARD_LIMIT_JSON__",
+            json.dumps(LIVE_BOARD_LIMIT),
+        )
     )
