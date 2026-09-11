@@ -64,6 +64,35 @@ CAPABILITY_EXAMPLES: list[dict[str, str]] = [
     },
 ]
 
+# Allow-list of Reservation fields that may ever be projected onto the public
+# reservation board. `unit_id` is internal, and `created_at`/`expires_at` are
+# internal scheduling detail (`expires_at` especially invites confusion with a
+# real booking's terms) — none of the three are ever published.
+LIVE_BOARD_FIELDS: tuple[str, ...] = (
+    "reservation_id",
+    "unit_name",
+    "area",
+    "arrival_date",
+    "departure_date",
+    "nights",
+    "guests",
+    "price_total",
+    "currency",
+)
+
+LIVE_BOARD_LIMIT = 20
+
+
+def project_board_fields(reservation: dict[str, Any]) -> dict[str, Any]:
+    """Project an arbitrary reservation mapping down to exactly LIVE_BOARD_FIELDS.
+
+    Used by both the incremental publish path (a confirmed booking landing during
+    a call) and the snapshot board-build path (a browser connecting), so the
+    projection has exactly one implementation and a future field added to
+    `Reservation` cannot silently reach the public stream.
+    """
+    return {key: reservation[key] for key in LIVE_BOARD_FIELDS if key in reservation}
+
 
 class LiveBroadcastHub:
     def __init__(self, *, queue_maxsize: int = LIVE_QUEUE_MAXSIZE) -> None:
@@ -156,6 +185,18 @@ class LiveBroadcastHub:
             "type": "capability",
             "ts": utc_now_iso(),
             "tool": tool,
+        }
+        self.publish(event)
+
+    def publish_reservation(self, reservation: dict[str, Any]) -> None:
+        # No store read, no file I/O — the event is built purely from the
+        # mapping already handed in by the dispatch site (RT-03). The board
+        # is not part of reset_call_state(): unlike the four call panels, it
+        # persists across calls.
+        event = {
+            "type": "reservation",
+            "ts": utc_now_iso(),
+            "reservation": project_board_fields(reservation),
         }
         self.publish(event)
 

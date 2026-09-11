@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
@@ -10,12 +11,24 @@ from starlette.responses import StreamingResponse
 
 from app.models.call import utc_now_iso
 from app.path_prefix import build_request_app_path
-from app.services.live_broadcast import CAPABILITY_EXAMPLES, live_broadcast_hub
+from app.services.live_broadcast import (
+    CAPABILITY_EXAMPLES,
+    LIVE_BOARD_LIMIT,
+    live_broadcast_hub,
+    project_board_fields,
+)
+from app.services.reservation_provider import reservation_provider
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 LIVE_KEEPALIVE_SECONDS = 15
+
+
+def build_board_entries(limit: int = LIVE_BOARD_LIMIT) -> list[dict[str, Any]]:
+    reservations = reservation_provider.list_active_reservations()
+    ordered = sorted(reservations, key=lambda record: record.created_at, reverse=True)
+    return [project_board_fields(record.to_dict()) for record in ordered[:limit]]
 
 
 def format_sse_event(event: dict) -> str:
@@ -672,11 +685,20 @@ async def live_stream(request: Request) -> StreamingResponse:
 
     async def event_generator():
         try:
+            try:
+                board = await asyncio.to_thread(build_board_entries)
+            except Exception:
+                logger.exception(
+                    "Failed to build live reservation board; falling back to empty list"
+                )
+                board = []
+
             snapshot = {
                 "type": "snapshot",
                 "ts": utc_now_iso(),
             }
             snapshot.update(live_broadcast_hub.state_snapshot())
+            snapshot["board"] = board
             yield format_sse_event(snapshot)
 
             while True:

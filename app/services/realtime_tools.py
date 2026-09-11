@@ -71,6 +71,13 @@ async def execute_realtime_tool(
         logger.info("Live agent-state published tool=%s", name)
         try:
             result = await reservation_provider.create_reservation(arguments, session=session)
+            if result.status == "confirmed" and result.reservation is not None:
+                live_broadcast_hub.publish_reservation(result.reservation.to_dict())
+                logger.info(
+                    "Live board published reservation tool=%s reservation_id=%s",
+                    name,
+                    result.reservation.reservation_id,
+                )
             return result.to_dict()
         except ReservationValidationError as exc:
             return {
