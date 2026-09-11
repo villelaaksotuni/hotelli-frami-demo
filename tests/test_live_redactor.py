@@ -1,5 +1,6 @@
 import unittest
 
+from app.services.live_broadcast import LiveBroadcastHub
 from app.services.live_redactor import (
     NAME_PLACEHOLDER,
     PHONE_PLACEHOLDER,
@@ -76,6 +77,56 @@ class LiveRedactorTests(unittest.TestCase):
         self.assertIn(PHONE_PLACEHOLDER, result)
         self.assertNotIn("Matti", result)
         self.assertNotIn("0401234567", result)
+
+
+class LiveRedactorOverRedactionRegressionTests(unittest.TestCase):
+    def test_olen_kiinnostunut_sentence_survives_unchanged(self):
+        text = "olen kiinnostunut huoneesta"
+
+        self.assertEqual(redact_for_broadcast(text), text)
+
+    def test_olen_valmis_maksamaan_sentence_survives_unchanged(self):
+        text = "olen valmis maksamaan"
+
+        self.assertEqual(redact_for_broadcast(text), text)
+
+    def test_olen_samaa_mielta_sentence_survives_unchanged(self):
+        text = "olen samaa mielta"
+
+        self.assertEqual(redact_for_broadcast(text), text)
+
+    def test_olen_kaksi_yota_varaamassa_sentence_survives_unchanged(self):
+        text = "olen kaksi yota varaamassa"
+
+        self.assertEqual(redact_for_broadcast(text), text)
+
+    def test_uppercase_introducing_phrase_followed_by_lowercase_word_is_not_a_name(self):
+        text = "OLEN kiinnostunut huoneesta"
+
+        self.assertEqual(redact_for_broadcast(text), text)
+
+    def test_introducing_phrase_survives_any_casing_while_name_redacts(self):
+        result_all_caps = redact_for_broadcast("OLEN Ähtäri")
+        result_title_case = redact_for_broadcast("Nimeni On Örjan")
+
+        self.assertIn("OLEN", result_all_caps)
+        self.assertIn(NAME_PLACEHOLDER, result_all_caps)
+        self.assertNotIn("Ähtäri", result_all_caps)
+
+        self.assertIn("Nimeni On", result_title_case)
+        self.assertIn(NAME_PLACEHOLDER, result_title_case)
+        self.assertNotIn("Örjan", result_title_case)
+
+
+class LiveRedactorBroadcastBoundaryTests(unittest.TestCase):
+    def test_ordinary_sentence_reaches_a_subscriber_byte_identical(self):
+        hub = LiveBroadcastHub()
+        queue = hub.register()
+
+        hub.publish_transcript(speaker="user", text="olen kiinnostunut huoneesta")
+
+        event = queue.get_nowait()
+        self.assertEqual(event["text"], "olen kiinnostunut huoneesta")
 
 
 if __name__ == "__main__":
