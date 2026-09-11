@@ -1,5 +1,7 @@
+import asyncio
 import inspect
 import json
+import re
 import shutil
 import unittest
 from datetime import date, timedelta
@@ -7,7 +9,10 @@ from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
 
+from starlette.requests import Request
+
 from app.models.call import CallConfig, CallSession
+from app.routes.live import live_page
 from app.services import realtime_tools
 from app.services.live_broadcast import (
     CAPABILITY_EXAMPLES,
@@ -31,6 +36,24 @@ UNIT_ID = "jokipuistopark-asunto-2"
 
 def _future_date(days_ahead: int = 10) -> str:
     return (date.today() + timedelta(days=days_ahead)).isoformat()
+
+
+def _build_page_request() -> Request:
+    return Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "https",
+            "path": "/live",
+            "raw_path": b"/live",
+            "root_path": "",
+            "query_string": b"",
+            "headers": [],
+            "client": ("127.0.0.1", 12345),
+            "server": ("demo.example.com", 443),
+        }
+    )
 
 
 class LiveAgentStateHubTests(unittest.TestCase):
@@ -359,6 +382,40 @@ class CapabilityExamplesConstantTests(unittest.TestCase):
     def test_capability_examples_tools_match_tool_intents_keys(self):
         example_tools = {entry["tool"] for entry in CAPABILITY_EXAMPLES}
         self.assertEqual(example_tools, set(TOOL_INTENTS.keys()))
+
+
+class LiveAgentViewAndCapabilityHtmlTests(unittest.TestCase):
+    def setUp(self):
+        response = asyncio.run(live_page(_build_page_request()))
+        self.body = response.body.decode("utf-8")
+
+    def test_slot_labels_present(self):
+        for label in ("Saapuminen", "Oita", "Vieraita", "Alue", "Huonetyyppi"):
+            self.assertIn(label, self.body)
+
+    def test_capability_phrases_and_tool_names_present_and_match_constant(self):
+        for entry in CAPABILITY_EXAMPLES:
+            self.assertIn(entry["example_phrase"], self.body)
+            self.assertIn(entry["tool"], self.body)
+
+    def test_capability_examples_serialised_from_constant_not_hand_typed(self):
+        serialised = json.dumps(CAPABILITY_EXAMPLES, ensure_ascii=False)
+        self.assertIn(serialised, self.body)
+
+    def test_no_innerhtml_assignment(self):
+        self.assertNotIn(".innerHTML =", self.body)
+        self.assertNotIn(".innerHTML=", self.body)
+
+    def test_accent_color_appears_in_page(self):
+        accent_occurrences = [m.start() for m in re.finditer(re.escape("#b85c38"), self.body)]
+        self.assertGreater(len(accent_occurrences), 0)
+
+    def test_capability_panel_has_no_overflow_or_max_height_rule(self):
+        capability_rule_match = re.search(r"#capability-list\s*\{([^}]*)\}", self.body)
+        self.assertIsNotNone(capability_rule_match)
+        rule_body = capability_rule_match.group(1)
+        self.assertNotIn("overflow", rule_body)
+        self.assertNotIn("max-height", rule_body)
 
 
 if __name__ == "__main__":
