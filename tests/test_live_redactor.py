@@ -82,6 +82,24 @@ class LiveRedactorTests(unittest.TestCase):
         self.assertNotIn("Matti", result)
         self.assertNotIn("0401234567", result)
 
+    def test_nimeni_on_full_name_redacts_both_first_and_last_name(self):
+        result = redact_for_broadcast("Nimeni on Matti Virtanen")
+
+        self.assertIn("Nimeni on", result)
+        self.assertEqual(result.count(NAME_PLACEHOLDER), 1)
+        self.assertNotIn("Matti", result)
+        self.assertNotIn("Virtanen", result)
+
+    def test_olen_full_name_redacts_both_first_and_last_name(self):
+        result = redact_for_broadcast("olen Matti Virtanen, numeroni on 0401234567")
+
+        self.assertIn("olen", result)
+        self.assertEqual(result.count(NAME_PLACEHOLDER), 1)
+        self.assertNotIn("Matti", result)
+        self.assertNotIn("Virtanen", result)
+        self.assertIn(PHONE_PLACEHOLDER, result)
+        self.assertNotIn("0401234567", result)
+
 
 class LiveRedactorOverRedactionRegressionTests(unittest.TestCase):
     def test_olen_kiinnostunut_sentence_survives_unchanged(self):

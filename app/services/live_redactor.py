@@ -16,8 +16,14 @@ LONG_NUMBER_PATTERN = re.compile(r"\b\d{7,}\b")
 # Inline-scoped flag: the introducing phrase alternation is case-insensitive, but the
 # name's `[A-ZÄÖÅ]` first-character class stays case-sensitive, so the capitalisation
 # requirement on the captured name is not defeated by a module-level IGNORECASE flag.
+# The captured-name group consumes the first token plus up to two further
+# space-separated capitalized tokens, so a full first+last name (or a middle name) is
+# captured as a single group and replaced by one placeholder instead of leaking every
+# token after the first (CR-01: "Nimeni on Matti Virtanen" must redact both "Matti" and
+# "Virtanen", not just "Matti").
 SELF_ID_PATTERN = re.compile(
-    r"\b((?i:nimeni on|olen))\s+([A-ZÄÖÅ][\wäöåÄÖÅ'-]{1,30})\b"
+    r"\b((?i:nimeni on|olen))\s+"
+    r"([A-ZÄÖÅ][\wäöåÄÖÅ'-]{1,30}(?:\s+[A-ZÄÖÅ][\wäöåÄÖÅ'-]{1,30}){0,2})\b"
 )
 
 PHONE_PLACEHOLDER = "[puhelin]"
