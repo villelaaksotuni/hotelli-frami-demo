@@ -81,3 +81,33 @@ deliver it. Using the native mechanism is simpler and lower-risk than reimplemen
 version, and satisfies the harness's hard requirement.
 
 ---
+
+## [DECISION] Treat 0-Critical/0-Warning + Info-only as auto-fix loop convergence
+
+**Phase:** 2 (code-review --fix --auto loop)
+
+**What was ambiguous:** The code-review-fix auto-iteration loop's documented stop condition
+is `02-REVIEW.md`'s frontmatter `status: clean`. After 3 review/fix iterations, iteration 3
+found 0 Critical and 0 Warning findings — but 3 Info-level findings remained (test-coverage
+gaps around the iteration-1 fixes, plus one pre-existing minor status-literal reuse), so the
+frontmatter `status:` field read `issues_found`, not literally `clean` (the field means "any
+findings exist at all," not "any blocking findings exist").
+
+**Option chosen:** Treat this as effective convergence — stop the loop, do not spawn a
+4th iteration. `fix_scope` for every pass was `critical_warning` (the default, no `--all`
+flag), so Info findings were never in scope for the fixer in the first place; there was
+nothing left to fix within the run's own declared scope.
+
+**Alternatives considered:**
+1. Re-invoke with `--all` to also fix the 3 Info items — rejected: `--all` was never
+   requested for this run, and the Info items are genuinely optional (missing regression
+   tests for already-fixed code, and a cosmetic status-literal reuse) rather than defects.
+2. Treat "not literally `clean`" as non-convergence and loop again anyway — rejected: the
+   loop is capped at 3 iterations specifically because further looping past the meaningful
+   stop condition (no in-scope findings) burns time for no benefit.
+
+**Why:** The auto-fix loop's purpose is to close Critical/Warning findings before the phase
+is considered done; that bar was cleared. Documented the 3 remaining Info items in
+`02-REVIEW-FIX.md` rather than silently dropping them.
+
+---
