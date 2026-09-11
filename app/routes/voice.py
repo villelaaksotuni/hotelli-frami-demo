@@ -15,6 +15,14 @@ from app.config.settings import SettingsError, settings
 from app.models.call import CallConfig
 from app.services.call_config import build_call_config_from_payload, build_default_call_config
 from app.services.feedback_survey import feedback_survey_service
+from app.services.live_broadcast import (
+    LIVE_STATUS_CONNECTED,
+    LIVE_STATUS_ENDED,
+    LIVE_STATUS_ERROR,
+    LIVE_STATUS_IN_PROGRESS,
+    LIVE_STATUS_RINGING,
+    live_broadcast_hub,
+)
 from app.services.realtime_session import (
     initialize_session,
     request_initial_assistant_response,
@@ -58,6 +66,12 @@ async def handle_incoming_call(request: Request):
                     "from_number": from_number,
                     "to_number": to_number,
                 },
+            )
+            live_broadcast_hub.publish_status(LIVE_STATUS_RINGING)
+            logger.info(
+                "Published live status state=%s call_sid=%s",
+                LIVE_STATUS_RINGING,
+                call_sid,
             )
 
         response = VoiceResponse()
@@ -144,6 +158,12 @@ async def start_call(request: Request):
             call_sid=call.sid,
             config=call_config,
             metadata=session_metadata,
+        )
+        live_broadcast_hub.publish_status(LIVE_STATUS_RINGING)
+        logger.info(
+            "Published live status state=%s call_sid=%s",
+            LIVE_STATUS_RINGING,
+            call.sid,
         )
 
         return JSONResponse(
@@ -313,6 +333,12 @@ async def handle_media_stream(websocket: WebSocket):
                                 "twilio_start_event": data.get("start", {}),
                             },
                         )
+                        live_broadcast_hub.publish_status(LIVE_STATUS_CONNECTED)
+                        logger.info(
+                            "Published live status state=%s stream_sid=%s",
+                            LIVE_STATUS_CONNECTED,
+                            stream_sid,
+                        )
 
                         try:
                             await initialize_session(openai_ws, session.config)
@@ -327,6 +353,9 @@ async def handle_media_stream(websocket: WebSocket):
                                 error=error_message,
                             )
                             termination_reason = "openai_session_init_failed"
+                            live_broadcast_hub.publish_status(
+                                LIVE_STATUS_ERROR, reason=termination_reason
+                            )
                             logger.error(
                                 "%s stream_sid=%s call_sid=%s",
                                 error_message,
@@ -335,6 +364,13 @@ async def handle_media_stream(websocket: WebSocket):
                             )
                             call_ended = True
                             break
+
+                        live_broadcast_hub.publish_status(LIVE_STATUS_IN_PROGRESS)
+                        logger.info(
+                            "Published live status state=%s stream_sid=%s",
+                            LIVE_STATUS_IN_PROGRESS,
+                            stream_sid,
+                        )
 
                         logger.info(
                             "Stream started: stream_sid=%s call_sid=%s",
@@ -584,6 +620,9 @@ async def handle_media_stream(websocket: WebSocket):
             stream_sid=stream_sid,
             error="Timed out connecting to OpenAI Realtime API",
         )
+        live_broadcast_hub.publish_status(
+            LIVE_STATUS_ERROR, reason=termination_reason
+        )
     except Exception as exc:
         termination_reason = "media_stream_error"
         logger.error(
@@ -594,6 +633,9 @@ async def handle_media_stream(websocket: WebSocket):
         session_store.mark_session_error(
             stream_sid=stream_sid,
             error=f"Media stream error: {exc}",
+        )
+        live_broadcast_hub.publish_status(
+            LIVE_STATUS_ERROR, reason=termination_reason
         )
 
     finally:
@@ -617,6 +659,13 @@ async def handle_media_stream(websocket: WebSocket):
             logger.warning("Error closing Twilio websocket: %s", exc)
 
         session = session_store.finish_session(stream_sid, reason=termination_reason)
+        live_broadcast_hub.publish_status(LIVE_STATUS_ENDED, reason=termination_reason)
+        logger.info(
+            "Published live status state=%s stream_sid=%s reason=%s",
+            LIVE_STATUS_ENDED,
+            stream_sid,
+            termination_reason,
+        )
         if session:
             dialogue_turns = await save_conversation_log(session)
             feedback_survey_service.send_invite_if_needed(
