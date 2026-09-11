@@ -10,7 +10,7 @@ from starlette.responses import StreamingResponse
 
 from app.models.call import utc_now_iso
 from app.path_prefix import build_request_app_path
-from app.services.live_broadcast import live_broadcast_hub
+from app.services.live_broadcast import CAPABILITY_EXAMPLES, live_broadcast_hub
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -183,6 +183,63 @@ LIVE_HTML = """<!DOCTYPE html>
       overflow-wrap: break-word;
     }
 
+    #agent-intent {
+      font-size: 16px;
+      line-height: 1.5;
+      margin: 0 0 4px;
+    }
+
+    #agent-step {
+      margin: 0 0 16px;
+    }
+
+    .agent-slots {
+      display: grid;
+      gap: 8px;
+    }
+
+    .agent-slot-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 16px;
+    }
+
+    .agent-slot-value {
+      font-size: 16px;
+      line-height: 1.5;
+      text-align: right;
+    }
+
+    .agent-slot-value.agent-slot-empty {
+      color: var(--ink);
+      opacity: 0.45;
+    }
+
+    #capability-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .capability-entry {
+      padding: 12px 16px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      color: var(--ink);
+    }
+
+    .capability-entry.lit {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .capability-phrase {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.5;
+      overflow-wrap: break-word;
+    }
+
     .board-panel {
       width: 100%;
     }
@@ -253,12 +310,15 @@ LIVE_HTML = """<!DOCTYPE html>
   </main>
   <script>
     const liveStreamUrl = __API_LIVE_STREAM_URL_JSON__;
+    const CAPABILITY_EXAMPLES = __CAPABILITY_EXAMPLES_JSON__;
     const statusChip = document.getElementById("status-chip");
     const connDot = document.getElementById("conn-dot");
     const connLabel = document.getElementById("conn-label");
     const connDetail = document.getElementById("conn-detail");
     const transcriptList = document.getElementById("transcript-list");
     const transcriptScrollLock = document.getElementById("transcript-scroll-lock");
+    const agentStatePanel = document.getElementById("agent-state");
+    const capabilityListPanel = document.getElementById("capability-list");
 
     const escapeHtml = (value) =>
       String(value ?? "")
@@ -336,6 +396,143 @@ LIVE_HTML = """<!DOCTYPE html>
       scrollTranscriptToBottom();
     });
 
+    const AGENT_SLOT_ROWS = [
+      { key: "arrivalDate", label: "Saapuminen" },
+      { key: "nights", label: "Oita" },
+      { key: "guests", label: "Vieraita" },
+      { key: "area", label: "Alue" },
+      { key: "unitName", label: "Huonetyyppi" },
+    ];
+    const AGENT_SLOT_PLACEHOLDER = "—";
+
+    let agentPanelsReady = false;
+
+    function buildAgentStatePanel() {
+      agentStatePanel.textContent = "";
+
+      const intentEl = document.createElement("p");
+      intentEl.id = "agent-intent";
+      intentEl.textContent = "";
+      agentStatePanel.appendChild(intentEl);
+
+      const stepEl = document.createElement("p");
+      stepEl.id = "agent-step";
+      stepEl.className = "label";
+      stepEl.textContent = "";
+      agentStatePanel.appendChild(stepEl);
+
+      const slotsEl = document.createElement("div");
+      slotsEl.id = "agent-slots";
+      slotsEl.className = "agent-slots";
+
+      AGENT_SLOT_ROWS.forEach((row) => {
+        const rowEl = document.createElement("div");
+        rowEl.className = "agent-slot-row";
+        rowEl.dataset.slotKey = row.key;
+
+        const labelEl = document.createElement("span");
+        labelEl.className = "agent-slot-label label";
+        labelEl.textContent = row.label;
+
+        const valueEl = document.createElement("span");
+        valueEl.className = "agent-slot-value agent-slot-empty";
+        valueEl.textContent = AGENT_SLOT_PLACEHOLDER;
+
+        rowEl.appendChild(labelEl);
+        rowEl.appendChild(valueEl);
+        slotsEl.appendChild(rowEl);
+      });
+
+      agentStatePanel.appendChild(slotsEl);
+    }
+
+    function buildCapabilityListPanel() {
+      capabilityListPanel.textContent = "";
+
+      CAPABILITY_EXAMPLES.forEach((entry) => {
+        const entryEl = document.createElement("div");
+        entryEl.className = "capability-entry";
+        entryEl.dataset.tool = entry.tool;
+
+        const phraseEl = document.createElement("p");
+        phraseEl.className = "capability-phrase";
+        phraseEl.textContent = entry.example_phrase;
+
+        entryEl.appendChild(phraseEl);
+        capabilityListPanel.appendChild(entryEl);
+      });
+    }
+
+    function ensureAgentPanelsReady() {
+      if (agentPanelsReady) {
+        return;
+      }
+      buildAgentStatePanel();
+      buildCapabilityListPanel();
+      agentPanelsReady = true;
+    }
+
+    function resetAgentAndCapabilityPanels() {
+      agentPanelsReady = false;
+      ensureAgentPanelsReady();
+    }
+
+    function renderAgentState(agent) {
+      ensureAgentPanelsReady();
+
+      const intentEl = document.getElementById("agent-intent");
+      const stepEl = document.getElementById("agent-step");
+      if (intentEl) {
+        intentEl.textContent = (agent && agent.intent) || "";
+      }
+      if (stepEl) {
+        stepEl.textContent = (agent && agent.step) || "";
+      }
+
+      const slots = (agent && agent.slots) || {};
+      AGENT_SLOT_ROWS.forEach((row) => {
+        const rowEl = document.querySelector(
+          `.agent-slot-row[data-slot-key="${row.key}"]`
+        );
+        if (!rowEl) {
+          return;
+        }
+        const valueEl = rowEl.querySelector(".agent-slot-value");
+        const value = slots[row.key];
+        if (value) {
+          valueEl.textContent = value;
+          valueEl.classList.remove("agent-slot-empty");
+        } else {
+          valueEl.textContent = AGENT_SLOT_PLACEHOLDER;
+          valueEl.classList.add("agent-slot-empty");
+        }
+      });
+    }
+
+    function renderCapabilityState(firedTools) {
+      ensureAgentPanelsReady();
+
+      const fired = new Set(firedTools || []);
+      capabilityListPanel.querySelectorAll(".capability-entry").forEach((entryEl) => {
+        if (fired.has(entryEl.dataset.tool)) {
+          entryEl.classList.add("lit");
+        } else {
+          entryEl.classList.remove("lit");
+        }
+      });
+    }
+
+    function markCapabilityLit(tool) {
+      ensureAgentPanelsReady();
+
+      const entryEl = capabilityListPanel.querySelector(
+        `.capability-entry[data-tool="${tool}"]`
+      );
+      if (entryEl) {
+        entryEl.classList.add("lit");
+      }
+    }
+
     const STATUS_LABELS = {
       ringing: "Puhelu soi",
       connected: "Yhteys avattu",
@@ -392,13 +589,14 @@ LIVE_HTML = """<!DOCTYPE html>
       currentStatus = null;
       statusChip.className = "";
       transcriptReady = false;
+      agentPanelsReady = false;
       CALL_PANEL_IDS.forEach((id) =>
         setPanelHeadingBody(id, IDLE_HEADING, IDLE_BODY)
       );
     }
 
     function clearNonStatusLoadingCopy() {
-      ["agent-state", "capability-list"].forEach((id) => setPanelText(id, ""));
+      ensureAgentPanelsReady();
     }
 
     function renderStatus(state) {
@@ -408,6 +606,7 @@ LIVE_HTML = """<!DOCTYPE html>
       }
       if (state === "ringing") {
         clearTranscript();
+        resetAgentAndCapabilityPanels();
       }
       currentStatus = state;
       clearNonStatusLoadingCopy();
@@ -447,9 +646,18 @@ LIVE_HTML = """<!DOCTYPE html>
       if (frame.type === "status") {
         renderStatus(frame.state);
       } else if (frame.type === "snapshot") {
-        renderStatus(frame.status ? frame.status.state : null);
+        const snapshotState = frame.status ? frame.status.state : null;
+        renderStatus(snapshotState);
+        if (snapshotState) {
+          renderAgentState(frame.agent);
+          renderCapabilityState(frame.capabilities);
+        }
       } else if (frame.type === "transcript") {
         appendTranscriptLine(frame.speaker, frame.text);
+      } else if (frame.type === "agent") {
+        renderAgentState(frame);
+      } else if (frame.type === "capability") {
+        markCapabilityLit(frame.tool);
       }
     };
   </script>
@@ -511,4 +719,7 @@ def _render_live_html(api_live_stream_url: str) -> str:
     return LIVE_HTML.replace(
         "__API_LIVE_STREAM_URL_JSON__",
         json.dumps(api_live_stream_url),
+    ).replace(
+        "__CAPABILITY_EXAMPLES_JSON__",
+        json.dumps(CAPABILITY_EXAMPLES, ensure_ascii=False),
     )

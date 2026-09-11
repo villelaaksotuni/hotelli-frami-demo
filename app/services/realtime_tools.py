@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional
 
 from app.models.call import CallSession
 from app.services.callback_request_sms import callback_request_sms_service
+from app.services.live_broadcast import live_broadcast_hub
 from app.services.realtime_session import (
     AVAILABILITY_TOOL_NAME,
     CALLBACK_REQUEST_SMS_TOOL_NAME,
@@ -31,6 +32,9 @@ async def execute_realtime_tool(
         }
 
     if name == AVAILABILITY_TOOL_NAME:
+        live_broadcast_hub.publish_capability(tool=name)
+        live_broadcast_hub.publish_agent_state(tool=name, arguments=arguments)
+        logger.info("Live agent-state published tool=%s", name)
         try:
             result = await reservation_provider.check_availability(arguments)
             return result.to_dict()
@@ -62,6 +66,9 @@ async def execute_realtime_tool(
                 "error_code": "session_unavailable",
                 "message_for_assistant": "Varausta ei voitu yhdistää puheluun juuri nyt.",
             }
+        live_broadcast_hub.publish_capability(tool=name)
+        live_broadcast_hub.publish_agent_state(tool=name, arguments=arguments)
+        logger.info("Live agent-state published tool=%s", name)
         try:
             result = await reservation_provider.create_reservation(arguments, session=session)
             return result.to_dict()
@@ -82,6 +89,9 @@ async def execute_realtime_tool(
             }
 
     if name == CALLBACK_REQUEST_SMS_TOOL_NAME:
+        live_broadcast_hub.publish_capability(tool=name)
+        live_broadcast_hub.publish_agent_state(tool=name, arguments=arguments)
+        logger.info("Live agent-state published tool=%s", name)
         try:
             result = callback_request_sms_service.send_callback_request(
                 session=session,
