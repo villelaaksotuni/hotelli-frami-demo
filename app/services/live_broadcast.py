@@ -45,6 +45,9 @@ class LiveBroadcastHub:
                 )
 
     def publish_status(self, state: str, *, reason: str | None = None) -> None:
+        if state == LIVE_STATUS_RINGING:
+            self.reset_call_state()
+
         event = {
             "type": "status",
             "ts": utc_now_iso(),

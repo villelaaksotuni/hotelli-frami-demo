@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
@@ -117,13 +118,35 @@ LIVE_HTML = """<!DOCTYPE html>
       error: "danger",
     };
 
+    let currentStatus = null;
+    let lastFrameAt = Date.now();
+
+    const TRANSIENT_STATES = new Set(["ringing", "connected"]);
+    const TRANSIENT_TIMEOUT_MS = 90000;
+
     function renderStatus(state) {
       if (!state) {
         return;
       }
+      currentStatus = state;
       statusChip.textContent = STATUS_LABELS[state] || state;
       statusChip.className = STATUS_CLASS[state] || "";
     }
+
+    function renderIdleFallback() {
+      currentStatus = null;
+      statusChip.textContent = "Ei aktiivista puhelua juuri nyt";
+      statusChip.className = "";
+    }
+
+    setInterval(() => {
+      if (
+        TRANSIENT_STATES.has(currentStatus) &&
+        Date.now() - lastFrameAt > TRANSIENT_TIMEOUT_MS
+      ) {
+        renderIdleFallback();
+      }
+    }, 5000);
 
     const source = new EventSource(liveStreamUrl);
 
@@ -137,6 +160,7 @@ LIVE_HTML = """<!DOCTYPE html>
     };
 
     source.onmessage = (event) => {
+      lastFrameAt = Date.now();
       const frame = JSON.parse(event.data);
       if (frame.type === "status") {
         renderStatus(frame.state);
@@ -164,8 +188,21 @@ async def live_stream(request: Request) -> StreamingResponse:
             yield format_sse_event(snapshot)
 
             while True:
-                event = await queue.get()
+                try:
+                    event = await asyncio.wait_for(
+                        queue.get(), timeout=LIVE_KEEPALIVE_SECONDS
+                    )
+                except asyncio.TimeoutError:
+                    if await request.is_disconnected():
+                        break
+                    yield ": keepalive\n\n"
+                    continue
+
+                if await request.is_disconnected():
+                    break
                 yield format_sse_event(event)
+        except asyncio.CancelledError:
+            pass
         finally:
             live_broadcast_hub.unregister(queue)
 
