@@ -19,6 +19,7 @@ from app.services.realtime_session import (
     initialize_session,
     request_initial_assistant_response,
 )
+from app.services.live_broadcast import LIVE_STATUS_IN_PROGRESS, live_broadcast_hub
 from app.services.realtime_tools import execute_realtime_tool
 from app.services.runtime_state import session_store
 from app.services.transcript_service import save_conversation_log
@@ -335,6 +336,13 @@ async def handle_media_stream(websocket: WebSocket):
                             )
                             call_ended = True
                             break
+
+                        live_broadcast_hub.publish_status(LIVE_STATUS_IN_PROGRESS)
+                        logger.info(
+                            "Published live status state=%s stream_sid=%s",
+                            LIVE_STATUS_IN_PROGRESS,
+                            stream_sid,
+                        )
 
                         logger.info(
                             "Stream started: stream_sid=%s call_sid=%s",
