@@ -287,3 +287,61 @@ every autonomous re-entry would make the workflow non-convergent. Proceeding str
 Phase 3 planning is the continuation the user asked for.
 
 ---
+
+## [DECISION] Plan 03-01: ERROR broadcasts at 3 of 6 error sites, not all 6
+
+**Phase:** 3 (Plan 03-01, Wave 1 executor)
+
+**What was ambiguous:** The plan's Task 2 `<action>` text said to broadcast
+`LIVE_STATUS_ERROR` from all six `mark_session_error()` call sites in `voice.py`, but the
+same task's `<acceptance_criteria>`/`<verify>` hard-gates on exactly 8 total
+`publish_status(...)` call sites file-wide (5 lifecycle states × 1, plus a budget of 3
+ERROR sites) — the two requirements are mutually exclusive as written.
+
+**Option chosen (made by the Wave-1 executor, logged here per the no-stop instruction):**
+Broadcast ERROR from the 3 highest-visibility sites (session-init failure, OpenAI-connect
+timeout, outer catch-all) and leave the other 3 `mark_session_error()` sites unbroadcast.
+Recorded as `/.planning/WINDOWS.md` id 2 (`deviation`, open).
+
+**Alternatives considered:**
+1. Broadcast from all 6 sites, violating the hard 8-site verify gate — rejected: the
+   acceptance criteria are the actual test that runs; failing it would fail the plan.
+2. Stop and ask which 3 to pick — precluded by the no-stop instruction; the 3 chosen are
+   the ones a live visitor would actually notice (init/connect/fatal), the other 3 are
+   narrower internal-error paths already covered by the outer catch-all in practice.
+
+**Why:** The verify gate is the binding contract; the action text's "all six" was
+planner imprecision, not a deliberate requirement. Picking the 3 most visitor-facing sites
+satisfies the spirit (visitors see errors) within the letter (exactly 8 sites) of the plan.
+
+**Follow-up for the user:** `/.planning/WINDOWS.md` id 2 is open — review whether the other
+3 `mark_session_error()` sites need their own visitor-visible signal, or waive it.
+
+---
+
+## [BLOCKER] Plan 03-01: idle/disconnect visual backstop not run — no browser tool
+
+**Phase:** 3 (Plan 03-01, Wave 1 executor)
+
+**What was blocking:** The plan carried a human-check backstop (from UI-SPEC's 🧪 backstop
+row) asking someone to visually confirm: (1) idle copy renders correctly across all four
+call panels at rest, and (2) a brief (~5s) SSE disconnect shows the rail's disconnect copy
+while panels freeze on last-known content rather than flashing back to idle. Same root
+cause as the Phase 2 dashboard blocker above — no browser-automation tool available in this
+environment.
+
+**Option chosen:** Recorded as `/.planning/WINDOWS.md` id 1 (`unrun-verify`, open) rather
+than silently marking it done or fabricating a pass. All non-visual logic upstream (SSE
+event dispatch, panel state derivation, reconnect handling) is covered by the 115-test
+automated suite; only the actual pixel/timing render is unconfirmed.
+
+**Alternatives considered:** Same as the Phase 2 precedent — no browser tool exists here to
+do better than this.
+
+**Why:** Consistent with the established Phase 2 handling of this exact category of gap:
+verify everything mechanically checkable, log the residual visual-only gap honestly.
+**Follow-up for the user:** After `uvicorn app.main:app`, open `/live` with no active call,
+then trigger a real call and briefly kill the SSE connection to confirm the two visual
+behaviors above.
+
+---
