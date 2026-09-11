@@ -460,6 +460,9 @@ async def handle_media_stream(websocket: WebSocket):
                                     "Dropped user transcript because no active session exists for stream_sid=%s",
                                     stream_sid,
                                 )
+                            live_broadcast_hub.publish_transcript(
+                                speaker="user", text=transcript_text
+                            )
                             logger.info("User: %s", transcript_text)
 
                     if response_type == "response.done":
@@ -487,6 +490,9 @@ async def handle_media_stream(websocket: WebSocket):
                                                 "Dropped assistant transcript because no active session exists for stream_sid=%s",
                                                 stream_sid,
                                             )
+                                        live_broadcast_hub.publish_transcript(
+                                            speaker="assistant", text=transcript
+                                        )
                                     if transcript:
                                         final_assistant_reply_parts.append(transcript.strip())
                                     logger.info("Assistant: %s", transcript)

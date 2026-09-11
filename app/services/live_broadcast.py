@@ -5,6 +5,7 @@ import logging
 from typing import Any
 
 from app.models.call import utc_now_iso
+from app.services.live_redactor import redact_for_broadcast
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,19 @@ class LiveBroadcastHub:
             "reason": reason,
         }
         self._last_status = event
+        self.publish(event)
+
+    def publish_transcript(self, *, speaker: str, text: str) -> None:
+        redacted_text = redact_for_broadcast(text).strip()
+        if not redacted_text:
+            return
+
+        event = {
+            "type": "transcript",
+            "ts": utc_now_iso(),
+            "speaker": speaker,
+            "text": redacted_text,
+        }
         self.publish(event)
 
     def state_snapshot(self) -> dict[str, Any]:
