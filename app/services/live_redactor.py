@@ -21,6 +21,18 @@ LONG_NUMBER_PATTERN = re.compile(r"\b\d{7,}\b")
 # captured as a single group and replaced by one placeholder instead of leaking every
 # token after the first (CR-01: "Nimeni on Matti Virtanen" must redact both "Matti" and
 # "Virtanen", not just "Matti").
+#
+# CR-02 (accepted trade-off, not a defect): name detection here is capitalization-based
+# by design. A name that the ASR transcript renders in lowercase (e.g. "olen matti")
+# will NOT match this pattern and will pass through unredacted. This is a deliberate,
+# known residual risk rather than an oversight: matching the word after "nimeni on"/
+# "olen" case-insensitively was tried and rejected, because it caused unacceptable
+# over-redaction of ordinary lowercase Finnish words in the same sentence position
+# (e.g. "olen kiinnostunut", "olen valmis maksamaan", "olen samaa mielta" would all have
+# had their next word wrongly replaced by the name placeholder). Revisiting this
+# trade-off requires a design-level mitigation (e.g. a stoplist of common Finnish words,
+# or a second lower-confidence pattern), not a simple regex tweak — see CR-02 in
+# 03-REVIEW.md for the full analysis.
 SELF_ID_PATTERN = re.compile(
     r"\b((?i:nimeni on|olen))\s+"
     r"([A-ZÄÖÅ][\wäöåÄÖÅ'-]{1,30}(?:\s+[A-ZÄÖÅ][\wäöåÄÖÅ'-]{1,30}){0,2})\b"
