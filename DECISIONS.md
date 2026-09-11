@@ -249,3 +249,41 @@ inventing multi-tenant scope the requirements never asked for. Concurrent-write 
 already guaranteed by Phase 2's store lock (BOARD-02).
 
 ---
+
+## [DECISION] Resuming after context reset: re-verified phase queue, kept Phases 1-2 excluded
+
+**Phase:** Autonomous run (resumption, session continuity)
+
+**What was ambiguous:** This session started fresh (post `/clear`) with the same
+"execute all remaining phases autonomously" instruction repeated by the user. Re-running
+`gsd_run query init.manager` showed `verification_status: stale` for both Phase 1 and
+Phase 2 (in addition to Phase 3 being `researched`/no-plans-yet), which per the
+autonomous workflow's literal discover_phases filter (`phase_complete !== true` OR
+`verification_status !== "passed"`) would re-queue Phases 1 and 2 for
+discuss→plan→execute alongside 3-5.
+
+**Option chosen:** Confirmed the staleness is the same non-issue already documented above
+(Phase 1's blocker entry) and structurally identical for Phase 2:
+`02-VERIFICATION.md` records `status: passed`, `score: 12/12`, with a `covered_digest`
+computed at verification time — the "stale" flag just means git HEAD has since moved
+(Phase 3's discuss/UI-SPEC/research commits) past that recorded digest, not that Phase 2's
+implementation regressed. ROADMAP.md independently marks both Phase 1 and Phase 2 `[x]`
+complete with dates. Kept both excluded from this run's phase queue; resumed directly at
+Phase 3, which was left at "researched, no plans yet" (commit `e61846a`) by the prior
+session's `gsd-phase-researcher` background agent.
+
+**Alternatives considered:**
+1. Let the literal filter re-queue Phases 1-2 — rejected: would re-run discuss/plan/execute
+   against phases with no open success criteria left, wasting a full cycle and risking the
+   same git-init/history-destruction hazard flagged in the Phase 1 blocker entry above.
+2. Re-run `/gsd-verify-work` on 1 and 2 just to refresh the digest/state_head bookkeeping —
+   considered, but skipped: it would not change either phase's already-`passed` verdict,
+   only silence a cosmetic staleness flag, and the evidence for "already done" (ROADMAP
+   checkmarks + prior VERIFICATION.md files) is already conclusive without it.
+
+**Why:** Nothing about the actual codebase changed between the two sessions — only the
+conversation context reset. Re-litigating already-verified, roadmap-confirmed phases on
+every autonomous re-entry would make the workflow non-convergent. Proceeding straight to
+Phase 3 planning is the continuation the user asked for.
+
+---
