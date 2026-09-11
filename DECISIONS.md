@@ -180,3 +180,72 @@ tests) but not zero, so it is logged as a BLOCKER rather than folded into a DECI
 demo reservation on record, and confirm the "Varaus tehty" chip appears as expected.
 
 ---
+
+## [DECISION] Phase 3 in-stream anonymization: separate fast synchronous filter, not the existing LLM anonymizer
+
+**Phase:** 3
+
+**What was ambiguous:** STATE.md's Blockers/Concerns explicitly flagged this as needing a
+design pass and "explicit confirmation during phase discussion" before Phase 3 could be
+planned — it was not a routine grey area, but a named open question from Phase 2-era
+research.
+
+**Option chosen:** Two-tier anonymization. Keep `app/services/conversation_anonymizer.py`
+(LLM-based, async, post-call) exactly as-is for the persisted archival log. Add a
+**separate**, synchronous, non-LLM, regex/rule-based redaction pass applied per-utterance
+before broadcasting to public live viewers (phone-number-shaped digit runs and
+self-identifying name patterns like "nimeni on X" redacted to a placeholder).
+
+**Alternatives considered:**
+1. Port/reuse the existing LLM-based anonymizer for in-stream use — rejected: an LLM call
+   per utterance would add real latency to the live audio path (violates the phase's own
+   success criterion 5: "none of this live publishing ever blocks or adds latency") and real
+   per-utterance API cost, which is Phase 4's (not-yet-built) territory to control.
+2. Skip in-stream anonymization and only anonymize the persisted log — rejected: violates
+   the phase's success criterion 2 explicitly ("per-utterance content-safety
+   filtering/anonymization already applied in-stream, not only after the call ends").
+3. Stop and ask the user to design this — precluded by the "do not stop" instruction; this
+   had a clear best-engineering answer given the phase's own stated latency constraint.
+
+**Why:** The live-path latency constraint is explicit and non-negotiable (success criterion
+5); a synchronous deterministic filter is the only approach that satisfies both "must
+anonymize before broadcast" and "must not add latency," at the cost of being more
+conservative (may over-redact) than an LLM would be — an acceptable tradeoff for a public
+safety-relevant filter.
+
+---
+
+## [DECISION] Phase 3 "isolation": shared board, single active-call broadcast (not per-viewer sandboxes)
+
+**Phase:** 3
+
+**What was ambiguous:** STATE.md flagged "the shared-board vs. per-viewer-sandbox
+interpretation of 'isolation' needs explicit confirmation during phase discussion" as an
+open question from Phase 2-era research, before any REQUIREMENTS.md wording had been
+checked against it directly.
+
+**Option chosen:** Two separate answers for two separate things reusing the word
+"isolation": (1) the **reservation board** is one shared, aggregate view identical for every
+visitor — REQUIREMENTS.md's BOARD-01 already says this explicitly ("shared across all
+visitors watching"), so this required no real judgment call, just confirming the existing
+requirement text settles it; (2) the **live call status/transcript/agent panels** broadcast
+whichever single call is currently `in-progress` to all connected viewers (not a private
+per-viewer session) — if calls overlap, the panels follow the most recently active one.
+
+**Alternatives considered:**
+1. Per-viewer private call sessions (each visitor sees only "their own" call if they are the
+   one calling) — rejected: nothing in the roadmap or requirements describes per-viewer
+   authentication or session binding, and the whole point of the demo is that ANY visitor,
+   not just the caller, watches the call unfold live.
+2. A multi-call-tile UI showing every concurrent call simultaneously — rejected as
+   over-scoped for this phase: the roadmap's success criteria describe watching "a call"
+   (singular) throughout, and building multi-call UI is a materially larger scope increase
+   not clearly requested.
+
+**Why:** BOARD-01's wording directly resolves the board half; the live-panel half was
+resolved by the narrowest reading of the roadmap's own singular phrasing rather than
+inventing multi-tenant scope the requirements never asked for. Concurrent-write safety
+(the actual risk "isolation" usually protects against) is unaffected either way — it's
+already guaranteed by Phase 2's store lock (BOARD-02).
+
+---
