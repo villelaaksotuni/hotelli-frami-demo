@@ -1,7 +1,7 @@
 import unittest
 
 from app.models.call import CallSession
-from app.services.callback_request_sms import CallbackRequestSmsService
+from app.services.callback_request_sms import CallbackRequestSmsService, SmsDestinationError
 
 
 class FakeMessagesClient:
@@ -104,6 +104,81 @@ class CallbackRequestSmsTests(unittest.TestCase):
         self.assertFalse(second.sent)
         self.assertEqual(second.skipped_reason, "already_sent_for_session")
         self.assertEqual(len(self.twilio_client.messages.calls), 1)
+
+
+class CallbackRequestSmsDestinationGuardTests(unittest.TestCase):
+    def setUp(self):
+        self.twilio_client = FakeTwilioClient()
+
+    def test_normalized_owner_phone_sends_normally(self):
+        service = CallbackRequestSmsService(
+            from_phone="+14780000000",
+            owner_phone="+358409998877",
+            twilio_client=self.twilio_client,
+        )
+        session = CallSession(
+            metadata={
+                "direction": "inbound",
+                "from_number": "+358401112233",
+            }
+        )
+
+        result = service.send_callback_request(
+            session=session,
+            caller_name=None,
+            reason="Please call back",
+        )
+
+        self.assertTrue(result.sent)
+        self.assertEqual(len(self.twilio_client.messages.calls), 1)
+        self.assertEqual(self.twilio_client.messages.calls[0]["to"], "+358409998877")
+
+    def test_unnormalized_owner_phone_raises_and_sends_nothing(self):
+        service = CallbackRequestSmsService(
+            from_phone="+14780000000",
+            owner_phone="+358409998877",
+            twilio_client=self.twilio_client,
+        )
+        # Simulate a future refactor reintroducing an un-normalized value into
+        # the field the constructor is supposed to have normalized.
+        service._owner_phone = "+358 40 999 8877"
+        session = CallSession(
+            metadata={
+                "direction": "inbound",
+                "from_number": "+358401112233",
+            }
+        )
+
+        with self.assertRaises(SmsDestinationError):
+            service.send_callback_request(
+                session=session,
+                caller_name=None,
+                reason="Please call back",
+            )
+
+        self.assertEqual(len(self.twilio_client.messages.calls), 0)
+
+    def test_owner_phone_equal_to_caller_number_raises_and_sends_nothing(self):
+        service = CallbackRequestSmsService(
+            from_phone="+14780000000",
+            owner_phone="+358401112233",
+            twilio_client=self.twilio_client,
+        )
+        session = CallSession(
+            metadata={
+                "direction": "inbound",
+                "from_number": "+358401112233",
+            }
+        )
+
+        with self.assertRaises(SmsDestinationError):
+            service.send_callback_request(
+                session=session,
+                caller_name=None,
+                reason="Please call back",
+            )
+
+        self.assertEqual(len(self.twilio_client.messages.calls), 0)
 
 
 if __name__ == "__main__":
