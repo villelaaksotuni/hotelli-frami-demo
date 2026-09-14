@@ -7,22 +7,28 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
+from fastapi.routing import APIRoute
 from starlette.websockets import WebSocketState
 
 from app.config.settings import Settings, SettingsError
 from app.models.call import CallConfig
 from app.routes import voice as voice_module
+from app.routes.admin_auth import require_admin_access
 from app.services.runtime_state import InMemoryCallSessionStore
 
 
 class FakeRequest:
-    def __init__(self, method="GET", query_params=None, form_data=None):
+    def __init__(self, method="GET", query_params=None, form_data=None, json_data=None):
         self.method = method
         self.query_params = query_params or {}
         self._form_data = form_data or {}
+        self._json_data = json_data or {}
 
     async def form(self):
         return self._form_data
+
+    async def json(self):
+        return self._json_data
 
 
 def _build_settings(**overrides):
@@ -199,6 +205,103 @@ class ConcurrentCallCapTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(self.store.get_by_call_sid("CA-stale"))
         self.assertIsNotNone(self.store.get_by_call_sid("CA-fresh"))
+
+
+class FakeCreatedCall:
+    def __init__(self, sid: str):
+        self.sid = sid
+
+
+class FakeOutboundCallsResource:
+    def __init__(self):
+        self.create_calls: list[dict] = []
+
+    def create(self, **kwargs):
+        self.create_calls.append(kwargs)
+        return FakeCreatedCall(sid=f"CA-outbound-{len(self.create_calls)}")
+
+
+class FakeOutboundTwilioClient:
+    """Stands in for `settings.twilio_client` on the outbound-origination path
+    exercised by /start-call — distinct from FakeTwilioClient, which only
+    stands in for the mid-call `.calls(call_sid).update(...)` cutoff path."""
+
+    def __init__(self):
+        self.calls = FakeOutboundCallsResource()
+
+
+class StartCallGuardTests(unittest.IsolatedAsyncioTestCase):
+    # CR-02: /start-call must be authenticated (same admin Basic Auth pattern
+    # as /admin/prompt) and must honor the same concurrent-call cap as the
+    # inbound webhook path, since it can originate unbounded outbound Twilio
+    # calls otherwise.
+    def setUp(self):
+        self.store = InMemoryCallSessionStore()
+        self.fake_outbound_client = FakeOutboundTwilioClient()
+        self.test_settings = _with_fake_twilio_client(
+            _build_settings(
+                max_concurrent_calls=10,
+                twilio_account_sid="AC-test",
+                twilio_auth_token="test-token",
+                twilio_phone_number="+15550001111",
+            ),
+            self.fake_outbound_client,
+        )
+
+    def test_start_call_route_requires_admin_auth(self):
+        protected_routes = {
+            route.path: route
+            for route in voice_module.router.routes
+            if isinstance(route, APIRoute)
+        }
+        dependency_calls = [
+            dependency.call
+            for dependency in protected_routes["/start-call"].dependant.dependencies
+        ]
+        self.assertIn(require_admin_access, dependency_calls)
+
+    def _fill_store(self, count: int) -> None:
+        for index in range(count):
+            self.store.create_outbound_session(
+                call_sid=f"CA-existing-{index}",
+                config=CallConfig(),
+            )
+
+    async def _start_call(self, phone_number: str = "+358409999999"):
+        request = FakeRequest(
+            method="POST",
+            json_data={"phone_number": phone_number},
+        )
+        with patch.object(voice_module, "settings", self.test_settings), patch.object(
+            voice_module, "session_store", self.store
+        ):
+            return await voice_module.start_call(request, admin_user="admin")
+
+    async def test_at_capacity_start_call_is_refused_with_503(self):
+        self._fill_store(10)
+
+        response = await self._start_call()
+
+        self.assertEqual(response.status_code, 503)
+        body = json.loads(response.body.decode())
+        self.assertEqual(body["error"], "At capacity")
+
+    async def test_at_capacity_start_call_creates_no_twilio_call(self):
+        self._fill_store(10)
+
+        await self._start_call()
+
+        self.assertEqual(self.fake_outbound_client.calls.create_calls, [])
+        self.assertEqual(self.store.active_call_count(), 10)
+
+    async def test_below_capacity_start_call_originates_and_admits_session(self):
+        self._fill_store(9)
+
+        response = await self._start_call(phone_number="+358409999999")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(self.fake_outbound_client.calls.create_calls), 1)
+        self.assertEqual(self.store.active_call_count(), 10)
 
 
 class SettingsCallLimitDefaultsTests(unittest.TestCase):

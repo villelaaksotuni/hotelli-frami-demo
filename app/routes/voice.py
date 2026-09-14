@@ -2,10 +2,10 @@
 import base64
 import json
 import logging
-from typing import List, Optional
+from typing import Annotated, List, Optional
 
 import websockets
-from fastapi import APIRouter, Request, WebSocket
+from fastapi import APIRouter, Depends, Request, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.websockets import WebSocketDisconnect
 from starlette.websockets import WebSocketState
@@ -13,6 +13,7 @@ from twilio.twiml.voice_response import Connect, VoiceResponse
 
 from app.config.settings import SettingsError, settings
 from app.models.call import CallConfig
+from app.routes.admin_auth import require_admin_access
 from app.services.call_config import build_call_config_from_payload, build_default_call_config
 from app.services.feedback_survey import feedback_survey_service
 from app.services.live_broadcast import (
@@ -124,9 +125,17 @@ async def handle_incoming_call(request: Request):
 
 
 @router.post("/start-call")
-async def start_call(request: Request):
+async def start_call(
+    request: Request,
+    admin_user: Annotated[str, Depends(require_admin_access)],
+):
     """
     Minimal outbound call endpoint.
+
+    Privileged, cost-incurring action (originates a real Twilio call and
+    consumes a concurrent-call slot), so it requires the same HTTP Basic Auth
+    used for admin prompt editing and is subject to the same concurrent-call
+    cap as inbound calls.
 
     Expected JSON:
     {
@@ -142,8 +151,30 @@ async def start_call(request: Request):
       }
     }
     """
+    del admin_user
     try:
         settings.validate_twilio()
+
+        reaped_count = session_store.reap_stale_sessions(
+            settings.max_call_duration_seconds + STALE_SESSION_GRACE_SECONDS
+        )
+        if reaped_count:
+            logger.warning(
+                "[call-limit] reaped %s stale session(s) that never connected",
+                reaped_count,
+            )
+
+        active_call_count = session_store.active_call_count()
+        if active_call_count >= settings.max_concurrent_calls:
+            logger.warning(
+                "[call-limit] refusing outbound call at capacity active_calls=%s cap=%s",
+                active_call_count,
+                settings.max_concurrent_calls,
+            )
+            return JSONResponse(
+                status_code=503,
+                content={"error": "At capacity"},
+            )
 
         body = await request.json()
         phone_number = body.get("phone_number")
