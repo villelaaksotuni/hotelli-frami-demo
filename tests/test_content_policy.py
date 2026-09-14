@@ -55,6 +55,28 @@ class ContentPolicyUnitTests(unittest.TestCase):
         self.assertNotIn("Kuule", result)
         self.assertNotIn("heti", result)
 
+    def test_fronted_object_threat_word_order_is_blocked(self):
+        # WR-02: Finnish word order is flexible — the object-pronoun-then-verb
+        # order is a grammatical variant of the same threat THREAT_PATTERN
+        # already catches in verb-then-pronoun order.
+        self.assertEqual(apply_content_policy("sinut tapan"), CONTENT_POLICY_PLACEHOLDER)
+        self.assertEqual(
+            apply_content_policy("sinut minä tapan"), CONTENT_POLICY_PLACEHOLDER
+        )
+        self.assertEqual(
+            apply_content_policy("Kuule, sinut minä tapan heti"),
+            CONTENT_POLICY_PLACEHOLDER,
+        )
+
+    def test_ordinary_meeting_verb_is_not_mistaken_for_threat(self):
+        # "tapaan" (I will meet) must not be conflated with "tapan" (I kill)
+        # by either the verb-first or fronted-object threat pattern.
+        verb_first = "Tapaan teidät huomenna kello kymmenen"
+        object_first = "Teidät tapaan huomenna kello kymmenen"
+
+        self.assertEqual(apply_content_policy(verb_first), verb_first)
+        self.assertEqual(apply_content_policy(object_first), object_first)
+
 
 class ContentPolicyEndToEndTests(unittest.TestCase):
     def test_blocked_user_utterance_reaches_subscriber_as_placeholder(self):

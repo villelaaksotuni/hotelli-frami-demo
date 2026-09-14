@@ -60,10 +60,22 @@ THREAT_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# WR-02: the object-pronoun, then verb order ("sinut tapan", "sinut minä
+# tapan") is a grammatical fronted-object variant of the exact same threat
+# THREAT_PATTERN polices — flexible Finnish word order, not a distinct
+# category — so it needs its own pattern rather than an unbounded reorder of
+# THREAT_PATTERN (which would risk pathological backtracking).
+THREAT_PATTERN_REVERSED = re.compile(
+    r"\b(sinut|sut|teid[aä]t|h[aä]net)\s+(min[aä]\s+)?"
+    r"(tap(?:an|aisin|oin)|hakkaan|tuhoan|vahingoitan)\b",
+    re.IGNORECASE,
+)
+
 BLOCKED_PATTERNS: tuple[re.Pattern[str], ...] = (
     SLUR_PATTERN,
     SEXUAL_INSULT_PATTERN,
     THREAT_PATTERN,
+    THREAT_PATTERN_REVERSED,
 )
 
 
