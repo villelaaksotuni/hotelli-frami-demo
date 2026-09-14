@@ -103,9 +103,14 @@ class InMemoryCallSessionStore:
     def finish_session(
         self,
         stream_sid: Optional[str],
+        *,
+        call_sid: Optional[str] = None,
         reason: Optional[str] = None,
     ) -> Optional[CallSession]:
-        session = self.get_by_stream_sid(stream_sid)
+        # call_sid fallback (CR-03): a call that fails before Twilio's
+        # "start" event never has a stream_sid, so stream_sid-only lookup
+        # would silently no-op and leak the session's concurrent-call slot.
+        session = self.get_by_stream_sid(stream_sid) or self.get_by_call_sid(call_sid)
         if session is None:
             return None
         session.finish(reason=reason)

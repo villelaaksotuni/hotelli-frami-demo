@@ -3,6 +3,7 @@ import base64
 import json
 import logging
 from typing import Annotated, List, Optional
+from urllib.parse import quote
 
 import websockets
 from fastapi import APIRouter, Depends, Request, WebSocket
@@ -104,8 +105,16 @@ async def handle_incoming_call(request: Request):
         if greeting_text:
             response.say(greeting_text, language=greeting_language)
 
+        stream_url = f"{public_websocket_base_url}/media-stream"
+        if call_sid:
+            # Thread call_sid through the query string so handle_media_stream
+            # knows it before Twilio's "start" event arrives on the socket —
+            # otherwise a connection failure ahead of that event (CR-03) has
+            # no way to look up and release the CallSession created above.
+            stream_url = f"{stream_url}?callSid={quote(call_sid)}"
+
         connect = Connect()
-        connect.stream(url=f"{public_websocket_base_url}/media-stream")
+        connect.stream(url=stream_url)
         response.append(connect)
 
         logger.info(
@@ -254,6 +263,12 @@ async def handle_media_stream(websocket: WebSocket):
         await websocket.close(code=1008, reason="OpenAI API key not configured")
         return
 
+    # CR-03: read call_sid back from the stream URL's query string (set by
+    # handle_incoming_call) so a failure before Twilio's "start" websocket
+    # event still has a key to look up and release the CallSession created
+    # for this call. The "start" event (received below) remains the
+    # authoritative source and overwrites this once it arrives.
+    call_sid = websocket.query_params.get("callSid") or None
     openai_ws = None
     stream_sid = None
     latest_media_timestamp = 0
@@ -395,7 +410,7 @@ async def handle_media_stream(websocket: WebSocket):
                 )
 
         async def receive_from_twilio():
-            nonlocal stream_sid, latest_media_timestamp, call_ended
+            nonlocal stream_sid, latest_media_timestamp, call_ended, call_sid
             nonlocal last_assistant_item, response_start_timestamp_twilio, termination_reason
 
             try:
@@ -665,6 +680,7 @@ async def handle_media_stream(websocket: WebSocket):
                 logger.error("Error in send_to_twilio: %s", exc)
                 termination_reason = "openai_send_error"
                 session_store.mark_session_error(
+                    call_sid=call_sid,
                     stream_sid=stream_sid,
                     error=f"OpenAI/Twilio send error: {exc}",
                 )
@@ -716,6 +732,7 @@ async def handle_media_stream(websocket: WebSocket):
             if exception:
                 logger.error("Media stream task failed: %s", exception)
                 session_store.mark_session_error(
+                    call_sid=call_sid,
                     stream_sid=stream_sid,
                     error=f"Media stream task failed: {exception}",
                 )
@@ -739,6 +756,7 @@ async def handle_media_stream(websocket: WebSocket):
             exc,
         )
         session_store.mark_session_error(
+            call_sid=call_sid,
             stream_sid=stream_sid,
             error="Timed out connecting to OpenAI Realtime API",
         )
@@ -753,6 +771,7 @@ async def handle_media_stream(websocket: WebSocket):
             exc,
         )
         session_store.mark_session_error(
+            call_sid=call_sid,
             stream_sid=stream_sid,
             error=f"Media stream error: {exc}",
         )
@@ -787,7 +806,9 @@ async def handle_media_stream(websocket: WebSocket):
         except Exception as exc:
             logger.warning("Error closing Twilio websocket: %s", exc)
 
-        session = session_store.finish_session(stream_sid, reason=termination_reason)
+        session = session_store.finish_session(
+            stream_sid, call_sid=call_sid, reason=termination_reason
+        )
         live_broadcast_hub.publish_status(LIVE_STATUS_ENDED, reason=termination_reason)
         logger.info(
             "Published live status state=%s stream_sid=%s reason=%s",

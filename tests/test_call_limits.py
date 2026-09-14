@@ -70,12 +70,15 @@ class FakeOpenAIWebSocket:
 class FakeTwilioWebSocket:
     """Stands in for the Twilio-facing `WebSocket` handed to handle_media_stream."""
 
-    def __init__(self, events):
+    def __init__(self, events, query_params=None):
         # events: list of (delay_before_seconds, event_payload_dict)
         self._events = events
         self.client_state = WebSocketState.CONNECTED
         self.sent_json: list[dict] = []
         self.close_call_count = 0
+        # Mirrors the real Starlette WebSocket's query_params mapping — CR-03
+        # reads callSid off this before the "start" event arrives.
+        self.query_params = query_params or {}
 
     async def accept(self) -> None:
         pass
@@ -169,6 +172,15 @@ class ConcurrentCallCapTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("<Connect>", body)
         self.assertIn("<Stream", body)
+
+    async def test_admitted_call_stream_url_carries_call_sid(self):
+        # CR-03: handle_media_stream needs call_sid before the "start" event
+        # arrives, so handle_incoming_call must thread it through the
+        # <Stream> URL's query string.
+        response = await self._call(call_sid="CA-carries-sid")
+        body = response.body.decode()
+
+        self.assertIn("callSid=CA-carries-sid", body)
 
     async def test_ten_sessions_refuses_call(self):
         self._fill_store(10)
@@ -488,6 +500,87 @@ class DurationCapTimerTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(wrap_up_messages, [])
         self.assertEqual(fake_twilio_client.update_calls, [])
+
+
+class PreStartFailureCleanupTests(unittest.IsolatedAsyncioTestCase):
+    # CR-03: a session that fails to connect to OpenAI before Twilio's
+    # "start" websocket event arrives must still release its concurrent-call
+    # slot, using the call_sid threaded through the stream URL's query
+    # string (handle_incoming_call) rather than the still-None stream_sid.
+    async def test_pre_start_openai_timeout_releases_session_slot(self):
+        store = InMemoryCallSessionStore()
+        store.get_or_create_session(call_sid="CA-pre-start", config=CallConfig())
+        self.assertEqual(store.active_call_count(), 1)
+
+        async def _slow_connect(*args, **kwargs):
+            await asyncio.sleep(10)
+
+        fake_twilio_ws = FakeTwilioWebSocket(
+            events=[], query_params={"callSid": "CA-pre-start"}
+        )
+        test_settings = _build_settings()
+
+        with patch.object(voice_module, "settings", test_settings), patch.object(
+            voice_module, "session_store", store
+        ), patch.object(
+            voice_module, "OPENAI_CONNECT_TIMEOUT_SECONDS", 0.01
+        ), patch.object(
+            voice_module.websockets, "connect", _slow_connect
+        ):
+            await asyncio.wait_for(
+                voice_module.handle_media_stream(fake_twilio_ws), timeout=2.0
+            )
+
+        self.assertEqual(store.active_call_count(), 0)
+        self.assertIsNone(store.get_by_call_sid("CA-pre-start"))
+
+    async def test_pre_start_generic_failure_releases_session_slot(self):
+        store = InMemoryCallSessionStore()
+        store.get_or_create_session(call_sid="CA-pre-start-2", config=CallConfig())
+        self.assertEqual(store.active_call_count(), 1)
+
+        async def _failing_connect(*args, **kwargs):
+            raise RuntimeError("boom")
+
+        fake_twilio_ws = FakeTwilioWebSocket(
+            events=[], query_params={"callSid": "CA-pre-start-2"}
+        )
+        test_settings = _build_settings()
+
+        with patch.object(voice_module, "settings", test_settings), patch.object(
+            voice_module, "session_store", store
+        ), patch.object(
+            voice_module.websockets, "connect", _failing_connect
+        ):
+            await asyncio.wait_for(
+                voice_module.handle_media_stream(fake_twilio_ws), timeout=2.0
+            )
+
+        self.assertEqual(store.active_call_count(), 0)
+        self.assertIsNone(store.get_by_call_sid("CA-pre-start-2"))
+
+    async def test_pre_start_failure_without_call_sid_still_ends_gracefully(self):
+        # No callSid query param (e.g. a legacy/unexpected client) must not
+        # crash handle_media_stream — it simply cannot recover the slot,
+        # which is the pre-existing (documented residual) behavior.
+        store = InMemoryCallSessionStore()
+
+        async def _failing_connect(*args, **kwargs):
+            raise RuntimeError("boom")
+
+        fake_twilio_ws = FakeTwilioWebSocket(events=[])
+        test_settings = _build_settings()
+
+        with patch.object(voice_module, "settings", test_settings), patch.object(
+            voice_module, "session_store", store
+        ), patch.object(
+            voice_module.websockets, "connect", _failing_connect
+        ):
+            await asyncio.wait_for(
+                voice_module.handle_media_stream(fake_twilio_ws), timeout=2.0
+            )
+
+        self.assertEqual(store.active_call_count(), 0)
 
 
 class ReadmeCapValuesDriftTests(unittest.TestCase):
