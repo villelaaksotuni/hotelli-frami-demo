@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, Callable
 
 from app.models.call import utc_now_iso
+from app.services.content_policy import apply_content_policy
 from app.services.live_redactor import redact_for_broadcast
 from app.services.realtime_session import (
     AVAILABILITY_TOOL_NAME,
@@ -21,6 +22,18 @@ LIVE_STATUS_ENDED = "ended"
 LIVE_STATUS_ERROR = "error"
 
 LIVE_QUEUE_MAXSIZE = 64
+
+# Ordered composition of every sanitizer a transcript utterance must pass before
+# publish_transcript builds an event: PII redaction runs first so the content policy
+# sees text that already has phone numbers and names replaced, then the content
+# policy (SAFE-03) replaces the whole utterance if it matches a blocked pattern.
+# publish_transcript folds over this tuple rather than calling each sanitizer by
+# name, so "every published utterance passed every sanitizer" is true by
+# construction — a future third sanitizer only needs to be added here once.
+TRANSCRIPT_SANITIZERS: tuple[Callable[[str], str], ...] = (
+    redact_for_broadcast,
+    apply_content_policy,
+)
 
 # Allow-list of stay-detail argument keys that may ever be projected into a
 # public agent-state event. Any argument key not named here is dropped by
@@ -139,15 +152,18 @@ class LiveBroadcastHub:
         self.publish(event)
 
     def publish_transcript(self, *, speaker: str, text: str) -> None:
-        redacted_text = redact_for_broadcast(text).strip()
-        if not redacted_text:
+        sanitized_text = text
+        for sanitizer in TRANSCRIPT_SANITIZERS:
+            sanitized_text = sanitizer(sanitized_text)
+        sanitized_text = sanitized_text.strip()
+        if not sanitized_text:
             return
 
         event = {
             "type": "transcript",
             "ts": utc_now_iso(),
             "speaker": speaker,
-            "text": redacted_text,
+            "text": sanitized_text,
         }
         self.publish(event)
 
