@@ -4,6 +4,7 @@ import os
 import unittest
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import patch
 
 from starlette.websockets import WebSocketState
@@ -384,6 +385,19 @@ class DurationCapTimerTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(wrap_up_messages, [])
         self.assertEqual(fake_twilio_client.update_calls, [])
+
+
+class ReadmeCapValuesDriftTests(unittest.TestCase):
+    def test_readme_documents_current_cap_defaults(self):
+        with patch.dict(os.environ, {}, clear=True):
+            test_settings = Settings.from_env()
+
+        readme_path = Path(__file__).resolve().parent.parent / "README.md"
+        readme_text = readme_path.read_text(encoding="utf-8")
+
+        self.assertIn("## Cost and abuse controls", readme_text)
+        self.assertIn(str(test_settings.max_concurrent_calls), readme_text)
+        self.assertIn(str(test_settings.max_call_duration_seconds), readme_text)
 
 
 if __name__ == "__main__":
