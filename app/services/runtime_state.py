@@ -126,9 +126,18 @@ class InMemoryCallSessionStore:
         return len(self._sessions_by_call_sid)
 
     def reap_stale_sessions(self, max_age_seconds: float) -> int:
+        # WR-01: only reap sessions that never bound a stream (stream_sid is
+        # still None). A session that did bind a stream is a genuinely
+        # in-progress call whose normal termination flow (handle_media_stream's
+        # finally block) is responsible for removing it; silently dropping it
+        # here would understate active_call_count() for a call that may still
+        # be live and billable, e.g. if the Twilio REST "completed" update
+        # failed silently on the duration-cap cutoff path.
         reaped_count = 0
         now = datetime.now(timezone.utc)
         for session in list(self._sessions_by_call_sid.values()):
+            if session.stream_sid is not None:
+                continue
             try:
                 created_at = datetime.fromisoformat(session.created_at)
             except (TypeError, ValueError):

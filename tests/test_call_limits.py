@@ -316,6 +316,51 @@ class StartCallGuardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.store.active_call_count(), 10)
 
 
+class ReapStaleSessionsBoundStreamTests(unittest.TestCase):
+    # WR-01: reap_stale_sessions must not evict a session that already bound
+    # a stream (a genuinely in-progress call) — only sessions that never
+    # connected are safe to silently drop from bookkeeping.
+    def setUp(self):
+        self.store = InMemoryCallSessionStore()
+
+    def _make_stale(self, call_sid: str, *, bind_stream: bool) -> None:
+        session = self.store.create_outbound_session(call_sid=call_sid, config=CallConfig())
+        if bind_stream:
+            session.bind_stream(f"MZ-{call_sid}")
+        stale_age_seconds = 700
+        session.created_at = (
+            datetime.now(timezone.utc) - timedelta(seconds=stale_age_seconds)
+        ).isoformat()
+
+    def test_stale_unbound_session_is_reaped(self):
+        self._make_stale("CA-never-connected", bind_stream=False)
+
+        reaped_count = self.store.reap_stale_sessions(max_age_seconds=600)
+
+        self.assertEqual(reaped_count, 1)
+        self.assertIsNone(self.store.get_by_call_sid("CA-never-connected"))
+
+    def test_stale_bound_session_is_not_reaped(self):
+        self._make_stale("CA-in-progress", bind_stream=True)
+
+        reaped_count = self.store.reap_stale_sessions(max_age_seconds=600)
+
+        self.assertEqual(reaped_count, 0)
+        self.assertIsNotNone(self.store.get_by_call_sid("CA-in-progress"))
+
+    def test_mixed_ages_only_unbound_stale_session_is_reaped(self):
+        self._make_stale("CA-never-connected", bind_stream=False)
+        self._make_stale("CA-in-progress", bind_stream=True)
+        self.store.create_outbound_session(call_sid="CA-fresh", config=CallConfig())
+
+        reaped_count = self.store.reap_stale_sessions(max_age_seconds=600)
+
+        self.assertEqual(reaped_count, 1)
+        self.assertIsNone(self.store.get_by_call_sid("CA-never-connected"))
+        self.assertIsNotNone(self.store.get_by_call_sid("CA-in-progress"))
+        self.assertIsNotNone(self.store.get_by_call_sid("CA-fresh"))
+
+
 class SettingsCallLimitDefaultsTests(unittest.TestCase):
     def test_call_limit_defaults(self):
         with patch.dict(os.environ, {}, clear=True):
