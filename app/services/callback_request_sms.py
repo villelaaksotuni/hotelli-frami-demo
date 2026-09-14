@@ -8,6 +8,10 @@ from app.models.call import CallSession, utc_now_iso
 from app.services.sms_utils import extract_counterparty_phone, normalize_phone
 
 
+class SmsDestinationError(RuntimeError):
+    """Raised when the SMS send destination is not the server-configured owner phone."""
+
+
 @dataclass(frozen=True)
 class CallbackRequestSmsResult:
     sent: bool
@@ -117,6 +121,25 @@ class CallbackRequestSmsService:
                 ),
             )
 
+        destination = self._owner_phone
+        if not destination:
+            raise SmsDestinationError(
+                "SMS destination is empty; the SMS destination is the server-configured "
+                "reception number and never a caller-supplied or tool-supplied value."
+            )
+        if destination != normalize_phone(destination):
+            raise SmsDestinationError(
+                "SMS destination is not normalized; the SMS destination is the "
+                "server-configured reception number and never a caller-supplied or "
+                "tool-supplied value."
+            )
+        if destination == caller_phone:
+            raise SmsDestinationError(
+                "SMS destination equals the caller's own number; the SMS destination is "
+                "the server-configured reception number and never a caller-supplied or "
+                "tool-supplied value."
+            )
+
         message = self._twilio_client.messages.create(
             body=self._build_sms_body(
                 caller_phone=caller_phone,
@@ -124,7 +147,7 @@ class CallbackRequestSmsService:
                 reason=cleaned_reason,
             ),
             from_=self._from_phone,
-            to=self._owner_phone,
+            to=destination,
         )
         message_sid = getattr(message, "sid", None)
         history.append(
