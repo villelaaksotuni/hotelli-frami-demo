@@ -61,6 +61,39 @@ The inbound Twilio call flow now plays an AI disclosure before connecting the ca
 
 Start from [.env.example](.env.example) and create a real `.env` outside Git history.
 
+## Cost and abuse controls
+
+This application enforces two caps on the public demo phone number:
+
+- A global concurrent-call cap, `MAX_CONCURRENT_CALLS` (default `10`): a caller who
+  dials in once this many calls are already active is answered, hears a short Finnish
+  message explaining the demo is at capacity, and is not connected to the media stream.
+- A hard per-call duration cap, `MAX_CALL_DURATION_SECONDS` (default `600`, ten
+  minutes): the assistant receives a spoken Finnish heads-up at
+  `WRAP_UP_WARNING_SECONDS` (default `570`, nine minutes thirty seconds) to wrap up
+  naturally, and the call is force-ended through Twilio's REST `Calls` resource if it
+  is still active at the hard cap.
+
+Together these two caps bound worst-case application-side cost: at most ten
+concurrent calls, each at most ten minutes.
+
+Beyond these two caps, this application does **not** track spend or enforce a
+provider-side spend ceiling. Two separate provider-managed backstops exist outside
+this application's control:
+
+- **Twilio billing** is governed by the operator's own Twilio account controls
+  (pay-as-you-go balance-based project suspension, plus optional usage triggers).
+  This application neither configures nor verifies that those controls are in place.
+- **OpenAI Realtime access in this deployment runs through Azure OpenAI**, whose
+  spend is governed by the org's Azure Cost Management budget policy — outside this
+  application's control. An operator who instead switches `OPENAI_API_PROVIDER` to
+  `openai` relies on the OpenAI platform's own project or organization spend limit
+  instead.
+
+This application cannot confirm that either provider-side ceiling is configured. With
+neither configured, the `MAX_CONCURRENT_CALLS` and `MAX_CALL_DURATION_SECONDS` caps
+above are the only cost ceiling that exists for this deployment.
+
 ## Recommended container settings
 
 - Set `APP_DATA_DIR=/data`

@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Dict, Optional
 
 from app.models.call import CallConfig, CallSession
@@ -115,6 +116,23 @@ class InMemoryCallSessionStore:
             self._sessions_by_call_sid.pop(session.call_sid, None)
         if session.stream_sid:
             self._sessions_by_stream_sid.pop(session.stream_sid, None)
+
+    def active_call_count(self) -> int:
+        return len(self._sessions_by_call_sid)
+
+    def reap_stale_sessions(self, max_age_seconds: float) -> int:
+        reaped_count = 0
+        now = datetime.now(timezone.utc)
+        for session in list(self._sessions_by_call_sid.values()):
+            try:
+                created_at = datetime.fromisoformat(session.created_at)
+            except (TypeError, ValueError):
+                continue
+            age_seconds = (now - created_at).total_seconds()
+            if age_seconds > max_age_seconds:
+                self.remove_session(session)
+                reaped_count += 1
+        return reaped_count
 
 
 session_store = InMemoryCallSessionStore()

@@ -39,6 +39,7 @@ OPENAI_CONNECT_TIMEOUT_SECONDS = 10
 OPENAI_PING_INTERVAL_SECONDS = 20
 OPENAI_PING_TIMEOUT_SECONDS = 20
 OPENAI_CLOSE_TIMEOUT_SECONDS = 5
+STALE_SESSION_GRACE_SECONDS = 60
 
 
 @router.api_route("/incoming-call", methods=["GET", "POST"])
@@ -57,6 +58,29 @@ async def handle_incoming_call(request: Request):
         call_sid = str(webhook_payload.get("CallSid") or "").strip() or None
         from_number = str(webhook_payload.get("From") or "").strip() or None
         to_number = str(webhook_payload.get("To") or "").strip() or None
+
+        reaped_count = session_store.reap_stale_sessions(
+            settings.max_call_duration_seconds + STALE_SESSION_GRACE_SECONDS
+        )
+        if reaped_count:
+            logger.warning(
+                "[call-limit] reaped %s stale session(s) that never connected",
+                reaped_count,
+            )
+
+        active_call_count = session_store.active_call_count()
+        if active_call_count >= settings.max_concurrent_calls:
+            logger.warning(
+                "[call-limit] refusing call at capacity active_calls=%s cap=%s",
+                active_call_count,
+                settings.max_concurrent_calls,
+            )
+            capacity_response = VoiceResponse()
+            capacity_response.say(settings.capacity_message_fi, language="fi-FI")
+            return HTMLResponse(
+                content=str(capacity_response), media_type="application/xml"
+            )
+
         if call_sid:
             session_store.get_or_create_session(
                 call_sid=call_sid,
@@ -209,6 +233,7 @@ async def handle_media_stream(websocket: WebSocket):
     ai_audio_ms_sent = 0
     termination_reason = "unknown"
     handled_tool_call_ids: set[str] = set()
+    duration_cap_tasks: List[asyncio.Task] = []
 
     try:
         openai_ws = await asyncio.wait_for(
@@ -293,6 +318,51 @@ async def handle_media_stream(websocket: WebSocket):
                 response_start_timestamp_twilio = None
                 ai_audio_ms_sent = 0
 
+        async def send_wrap_up_warning():
+            await asyncio.sleep(settings.wrap_up_warning_seconds)
+            try:
+                await openai_ws.send(
+                    json.dumps(
+                        {
+                            "type": "response.create",
+                            "response": {
+                                "instructions": settings.wrap_up_instruction_fi,
+                                "output_modalities": ["audio"],
+                            },
+                        }
+                    )
+                )
+                logger.info(
+                    "[call-limit] sent wrap-up warning stream_sid=%s", stream_sid
+                )
+            except Exception as exc:
+                logger.warning("[call-limit] failed to send wrap-up warning: %s", exc)
+
+        async def force_end_call_at_cap(call_sid: Optional[str]):
+            await asyncio.sleep(settings.max_call_duration_seconds)
+            try:
+                twilio_client = settings.twilio_client
+                if twilio_client and call_sid:
+                    await asyncio.to_thread(
+                        twilio_client.calls(call_sid).update, status="completed"
+                    )
+                    logger.warning(
+                        "[call-limit] force-ended call at duration cap call_sid=%s",
+                        call_sid,
+                    )
+                else:
+                    logger.warning(
+                        "[call-limit] no Twilio client/call_sid available; closing "
+                        "websocket as last-resort cutoff call_sid=%s",
+                        call_sid,
+                    )
+                    if websocket.client_state == WebSocketState.CONNECTED:
+                        await websocket.close()
+            except Exception as exc:
+                logger.error(
+                    "[call-limit] error force-ending call at duration cap: %s", exc
+                )
+
         async def receive_from_twilio():
             nonlocal stream_sid, latest_media_timestamp, call_ended
             nonlocal last_assistant_item, response_start_timestamp_twilio, termination_reason
@@ -370,6 +440,21 @@ async def handle_media_stream(websocket: WebSocket):
                             "Published live status state=%s stream_sid=%s",
                             LIVE_STATUS_IN_PROGRESS,
                             stream_sid,
+                        )
+
+                        if settings.wrap_up_warning_seconds < settings.max_call_duration_seconds:
+                            duration_cap_tasks.append(
+                                asyncio.create_task(send_wrap_up_warning())
+                            )
+                        else:
+                            logger.warning(
+                                "[call-limit] wrap_up_warning_seconds=%s >= "
+                                "max_call_duration_seconds=%s; skipping wrap-up timer",
+                                settings.wrap_up_warning_seconds,
+                                settings.max_call_duration_seconds,
+                            )
+                        duration_cap_tasks.append(
+                            asyncio.create_task(force_end_call_at_cap(call_sid))
                         )
 
                         logger.info(
@@ -646,6 +731,13 @@ async def handle_media_stream(websocket: WebSocket):
 
     finally:
         logger.info("Cleaning up media stream resources")
+
+        for task in duration_cap_tasks:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
         if openai_ws:
             try:
