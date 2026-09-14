@@ -176,7 +176,10 @@ class LiveBroadcastHub:
             value = arguments.get(key)
             if value in (None, ""):
                 continue
-            self._agent_slots[key] = str(value)
+            sanitized_value = str(value)
+            for sanitizer in TRANSCRIPT_SANITIZERS:
+                sanitized_value = sanitizer(sanitized_value)
+            self._agent_slots[key] = sanitized_value
 
         self._agent_intent = tool_intent["intent"]
         self._agent_step = tool_intent["step"]

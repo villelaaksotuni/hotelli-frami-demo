@@ -165,6 +165,48 @@ class BothSanitizersInvariantTests(unittest.TestCase):
         )
 
 
+class PublishAgentStateSanitizationTests(unittest.TestCase):
+    # CR-01: publish_agent_state is a second, independent publish path that
+    # projects raw tool-call arguments (e.g. unitName, a caller-influenced
+    # free-text field) straight onto the public live board. It must run the
+    # same TRANSCRIPT_SANITIZERS composition as publish_transcript.
+    def test_blocked_slot_value_reaches_subscriber_as_placeholder(self):
+        hub = LiveBroadcastHub()
+        queue = hub.register()
+
+        hub.publish_agent_state(
+            tool="check_availability", arguments={"unitName": "tapan sinut"}
+        )
+
+        event = queue.get_nowait()
+        self.assertEqual(event["type"], "agent")
+        self.assertEqual(event["slots"]["unitName"], CONTENT_POLICY_PLACEHOLDER)
+        self.assertNotIn("tapan", event["slots"]["unitName"])
+
+    def test_blocked_slot_value_is_sanitized_in_state_snapshot(self):
+        hub = LiveBroadcastHub()
+
+        hub.publish_agent_state(
+            tool="check_availability", arguments={"unitName": "senkin huora"}
+        )
+
+        snapshot = hub.state_snapshot()
+        self.assertEqual(
+            snapshot["agent"]["slots"]["unitName"], CONTENT_POLICY_PLACEHOLDER
+        )
+
+    def test_ordinary_slot_value_passes_through_unchanged(self):
+        hub = LiveBroadcastHub()
+        queue = hub.register()
+
+        hub.publish_agent_state(
+            tool="check_availability", arguments={"unitName": "Rantasauna"}
+        )
+
+        event = queue.get_nowait()
+        self.assertEqual(event["slots"]["unitName"], "Rantasauna")
+
+
 class SingleTranscriptEmissionSiteTests(unittest.TestCase):
     def test_exactly_one_site_emits_a_transcript_type_event(self):
         # If a later phase adds a second transcript-emitting method that skips the
