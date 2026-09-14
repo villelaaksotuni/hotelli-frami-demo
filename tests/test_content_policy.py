@@ -1,10 +1,12 @@
+import inspect
 import unittest
 
 from app.services.content_policy import (
     CONTENT_POLICY_PLACEHOLDER,
     apply_content_policy,
 )
-from app.services.live_broadcast import LiveBroadcastHub
+from app.services.live_broadcast import LiveBroadcastHub, TRANSCRIPT_SANITIZERS
+from app.services.live_redactor import redact_for_broadcast
 
 
 class ContentPolicyUnitTests(unittest.TestCase):
@@ -86,6 +88,108 @@ class ContentPolicyEndToEndTests(unittest.TestCase):
         hub.publish_transcript(speaker="user", text="tapan sinut")
 
         self.assertEqual(queue.qsize(), 1)
+
+
+# The over-filtering corpus below is the guard against repeating the 03-05
+# over-redaction defect (see .planning/STATE.md's Phase 03 decision log): a future
+# maintainer tempted to broaden BLOCKED_PATTERNS should see this corpus go red
+# before shipping a change that blanks ordinary Finnish speech. Each utterance is
+# asserted byte-identical against apply_content_policy's input, not merely "no
+# placeholder present", so a partial substitution also fails this guard.
+ORDINARY_FINNISH_UTTERANCES: tuple[str, ...] = (
+    "Haluaisin varata huoneen saapumispäivälle 2025-09-10",
+    "Hinta on 129 euroa yöltä",
+    "Varaus on kahdeksi yöksi ja kahdelle vieraalle",
+    "Onko Jokipuisto-alueella vapaita huoneita",
+    "Haluaisin huoneen nimeltä Rantasauna",
+    # Lowercase self-identification of the shape the PII redactor deliberately does
+    # not match (live_redactor.py's CR-02: SELF_ID_PATTERN requires a capitalized
+    # name) — content policy must not treat it differently.
+    "olen matti ja haluaisin varata huoneen",
+    "Voinko maksaa varauksen luottokortilla",
+    "Mihin aikaan sisäänkirjautuminen alkaa",
+    "Haluaisin perua varaukseni",
+    "Kiitos paljon, hyvää päivänjatkoa",
+    "vittu tämä on hankalaa",
+    "saatana, en löydä varausnumeroa",
+    "perkele, yhteys taitaa pätkiä",
+    "Onko aamiainen sisällytetty hintaan",
+    "Voisitteko lähettää vahvistuksen sähköpostitse",
+)
+
+
+class ContentPolicyOverFilteringCorpusTests(unittest.TestCase):
+    def test_ordinary_utterances_pass_through_byte_identical(self):
+        for text in ORDINARY_FINNISH_UTTERANCES:
+            with self.subTest(text=text):
+                self.assertEqual(apply_content_policy(text), text)
+
+
+class BothSanitizersInvariantTests(unittest.TestCase):
+    def test_utterance_requiring_both_sanitizers_yields_content_policy_placeholder(self):
+        # Carries a Finnish phone number (redactor's job) AND a blocked term
+        # (content policy's job) — proving the content policy ran AFTER the
+        # redactor rather than instead of it.
+        hub = LiveBroadcastHub()
+        queue = hub.register()
+
+        hub.publish_transcript(
+            speaker="user", text="Numeroni on 0401234567, tapan sinut"
+        )
+
+        event = queue.get_nowait()
+        self.assertEqual(event["text"], CONTENT_POLICY_PLACEHOLDER)
+
+    def test_utterance_only_redactor_would_change_still_gets_redacted(self):
+        # Proves the content policy did not swallow the redactor's own output.
+        hub = LiveBroadcastHub()
+        queue = hub.register()
+
+        hub.publish_transcript(speaker="user", text="Numeroni on 0401234567")
+
+        event = queue.get_nowait()
+        self.assertEqual(event["text"], redact_for_broadcast("Numeroni on 0401234567"))
+
+    def test_sanitizer_order_is_exactly_redactor_then_content_policy(self):
+        expected = [redact_for_broadcast, apply_content_policy]
+        actual = list(TRANSCRIPT_SANITIZERS)
+
+        self.assertEqual(
+            actual,
+            expected,
+            msg=(
+                "TRANSCRIPT_SANITIZERS must be exactly "
+                "[redact_for_broadcast, apply_content_policy] in that order — "
+                f"got {[getattr(fn, '__name__', fn) for fn in actual]}"
+            ),
+        )
+
+
+class SingleTranscriptEmissionSiteTests(unittest.TestCase):
+    def test_exactly_one_site_emits_a_transcript_type_event(self):
+        # If a later phase adds a second transcript-emitting method that skips the
+        # sanitizers, this goes red.
+        source = inspect.getsource(LiveBroadcastHub)
+        occurrences = source.count('"type": "transcript"')
+
+        self.assertEqual(
+            occurrences,
+            1,
+            msg=(
+                f"Expected exactly one transcript-type event emission site in "
+                f"LiveBroadcastHub, found {occurrences}"
+            ),
+        )
+
+
+class PublishTranscriptStaysSynchronousTests(unittest.TestCase):
+    def test_publish_transcript_is_not_a_coroutine(self):
+        # Companion to RT-03: no future change can slip an `await` into the path
+        # that also forwards live audio to the caller.
+        self.assertFalse(
+            inspect.iscoroutinefunction(LiveBroadcastHub.publish_transcript),
+            "publish_transcript became a coroutine",
+        )
 
 
 if __name__ == "__main__":
