@@ -244,6 +244,11 @@ class Settings:
     reservation_store_path: str
     reservation_ttl_hours: float
     max_reservations_per_call: int
+    max_concurrent_calls: int
+    max_call_duration_seconds: int
+    wrap_up_warning_seconds: int
+    capacity_message_fi: str
+    wrap_up_instruction_fi: str
     callback_request_to_phone: Optional[str]
     daily_summary_to_phone: Optional[str]
     daily_summary_timezone: str
@@ -338,6 +343,25 @@ class Settings:
             ),
             reservation_ttl_hours=cls._read_float("SYNTHETIC_RESERVATION_TTL_HOURS", 24.0),
             max_reservations_per_call=cls._read_int("SYNTHETIC_MAX_RESERVATIONS_PER_CALL", 3),
+            max_concurrent_calls=cls._read_positive_int("MAX_CONCURRENT_CALLS", 10),
+            max_call_duration_seconds=cls._read_positive_int(
+                "MAX_CALL_DURATION_SECONDS", 600
+            ),
+            wrap_up_warning_seconds=cls._read_positive_int(
+                "WRAP_UP_WARNING_SECONDS", 570
+            ),
+            capacity_message_fi=cls._read_str(
+                "CAPACITY_MESSAGE_FI",
+                "Kiitos soitostasi Hotelli Framin tekoälydemoon. Demo on juuri nyt "
+                "täynnä, eikä uusia puheluita voida ottaa vastaan. Kokeilethan "
+                "hetken kuluttua uudelleen. Kuulemiin.",
+            ),
+            wrap_up_instruction_fi=cls._read_str(
+                "WRAP_UP_INSTRUCTION_FI",
+                "Puhelun enimmäiskesto lähestyy. Kerro soittajalle ystävällisesti, "
+                "että demopuhelu päättyy pian, ja pyydä häntä kertomaan lyhyesti, "
+                "jos jokin asia on vielä kesken.",
+            ),
             callback_request_to_phone=os.getenv("CALLBACK_REQUEST_TO_PHONE")
             or os.getenv("OWNER_NOTIFICATION_TO_PHONE"),
             daily_summary_to_phone=os.getenv("DAILY_SUMMARY_TO_PHONE"),
@@ -449,6 +473,19 @@ class Settings:
             return int(raw_value)
         except ValueError as exc:
             raise SettingsError(f"Environment variable {name} must be an integer.") from exc
+
+    @staticmethod
+    def _read_positive_int(name: str, default: int) -> int:
+        raw_value = os.getenv(name)
+        if raw_value is None:
+            return default
+        try:
+            parsed_value = int(raw_value)
+        except ValueError as exc:
+            raise SettingsError(f"Environment variable {name} must be an integer.") from exc
+        if parsed_value < 1:
+            raise SettingsError(f"Environment variable {name} must be at least 1.")
+        return parsed_value
 
     @cached_property
     def twilio_client(self) -> Optional[Client]:

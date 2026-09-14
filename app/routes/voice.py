@@ -39,6 +39,7 @@ OPENAI_CONNECT_TIMEOUT_SECONDS = 10
 OPENAI_PING_INTERVAL_SECONDS = 20
 OPENAI_PING_TIMEOUT_SECONDS = 20
 OPENAI_CLOSE_TIMEOUT_SECONDS = 5
+STALE_SESSION_GRACE_SECONDS = 60
 
 
 @router.api_route("/incoming-call", methods=["GET", "POST"])
@@ -57,6 +58,29 @@ async def handle_incoming_call(request: Request):
         call_sid = str(webhook_payload.get("CallSid") or "").strip() or None
         from_number = str(webhook_payload.get("From") or "").strip() or None
         to_number = str(webhook_payload.get("To") or "").strip() or None
+
+        reaped_count = session_store.reap_stale_sessions(
+            settings.max_call_duration_seconds + STALE_SESSION_GRACE_SECONDS
+        )
+        if reaped_count:
+            logger.warning(
+                "[call-limit] reaped %s stale session(s) that never connected",
+                reaped_count,
+            )
+
+        active_call_count = session_store.active_call_count()
+        if active_call_count >= settings.max_concurrent_calls:
+            logger.warning(
+                "[call-limit] refusing call at capacity active_calls=%s cap=%s",
+                active_call_count,
+                settings.max_concurrent_calls,
+            )
+            capacity_response = VoiceResponse()
+            capacity_response.say(settings.capacity_message_fi, language="fi-FI")
+            return HTMLResponse(
+                content=str(capacity_response), media_type="application/xml"
+            )
+
         if call_sid:
             session_store.get_or_create_session(
                 call_sid=call_sid,
