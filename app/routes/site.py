@@ -6,7 +6,9 @@ import logging
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
+from app.config.settings import settings
 from app.path_prefix import build_request_app_path
+from app.services.sms_utils import normalize_phone
 from app.services.unit_registry import UNITS
 
 router = APIRouter()
@@ -22,13 +24,61 @@ DEMO_DISCLAIMER_FI = (
 
 ROOM_AREAS_FI = ("Framinranta", "Jokipuisto", "Kampusaukio")
 
+HOW_IT_WORKS_HEADING_FI = "Näin kokeilet demoa"
+HOW_IT_WORKS_INTRO_FI = (
+    "Hotelli Frami on tekoälyavustajan puhelindemo. Soita alla näkyvään numeroon "
+    "ja keskustele aidon tekoälyagentin kanssa suomeksi – voit pyytää huonetta ja "
+    "kokeilla varauksen tekemistä puhelun aikana."
+)
+PHONE_NOT_CONFIGURED_FI = "Demon puhelinnumero ei ole juuri nyt käytössä."
+RESERVE_STEP_FI = (
+    "Kerro avustajalle, minkä huoneen haluaisit varata – se tarkistaa saatavuuden "
+    "ja tekee synteettisen eli ei-oikean varauksen suoraan puhelun aikana."
+)
+TEASER_HEADING_FI = "Kokeile pyytää jotain näistä huoneista"
+TEASER_INTRO_FI = (
+    "Nämä ovat esimerkkejä huoneista, joita voit pyytää avustajalta puhelun aikana."
+)
+
 
 def _pluralize_fi(count: int, singular: str, plural: str) -> str:
     return f"{count} {singular if count == 1 else plural}"
 
 
-def _render_room_card_html(unit) -> str:
+def _render_how_it_works_html(request: Request) -> str:
+    live_link = build_request_app_path(request, "/live")
+    normalized_phone = normalize_phone(settings.twilio_phone_number)
+
+    if normalized_phone:
+        escaped_phone = html.escape(normalized_phone, quote=True)
+        phone_step_html = (
+            f'Soita numeroon <a href="tel:{escaped_phone}">{escaped_phone}</a>.'
+        )
+    else:
+        phone_step_html = PHONE_NOT_CONFIGURED_FI
+
+    escaped_live_link = html.escape(live_link, quote=True)
+    live_step_html = (
+        f'Avaa <a href="{escaped_live_link}">Live-näkymä</a> ja seuraa puhelua '
+        "reaaliajassa."
+    )
+
+    return (
+        '<section class="panel" id="how-it-works">'
+        f"<h2>{HOW_IT_WORKS_HEADING_FI}</h2>"
+        f"<p>{HOW_IT_WORKS_INTRO_FI}</p>"
+        "<ol>"
+        f"<li>{phone_step_html}</li>"
+        f"<li>{live_step_html}</li>"
+        f"<li>{RESERVE_STEP_FI}</li>"
+        "</ol>"
+        "</section>"
+    )
+
+
+def _render_room_teaser_row_html(unit) -> str:
     display_name = html.escape(unit.display_name, quote=True)
+    area_text = html.escape(unit.area, quote=True)
     rate_text = html.escape(f"alkaen {unit.nightly_rate_eur} € / yö", quote=True)
     capacity_text = html.escape(
         f"enintään {_pluralize_fi(unit.capacity, 'henkilö', 'henkilöä')}",
@@ -39,27 +89,34 @@ def _render_room_card_html(unit) -> str:
         quote=True,
     )
     return (
-        '<div class="room-card">'
+        '<div class="room-teaser-row">'
+        "<div>"
         f'<p class="room-card-title">{display_name}</p>'
+        f'<p class="label">{area_text}</p>'
+        "</div>"
+        "<div>"
         f'<p class="room-card-detail">{rate_text}</p>'
         f'<p class="room-card-detail">{capacity_text}</p>'
         f'<p class="room-card-detail">{nights_text}</p>'
         "</div>"
+        "</div>"
     )
 
 
-def _render_unit_cards() -> str:
-    sections: list[str] = []
-    for area in ROOM_AREAS_FI:
-        area_units = [unit for unit in UNITS if unit.area == area]
-        if not area_units:
-            continue
-        cards_html = "".join(_render_room_card_html(unit) for unit in area_units)
-        sections.append(
-            f"<h3>{html.escape(area, quote=True)}</h3>"
-            f'<div class="room-card-grid">{cards_html}</div>'
-        )
-    return "".join(sections)
+TEASER_UNITS: tuple = tuple(
+    next(unit for unit in UNITS if unit.area == area) for area in ROOM_AREAS_FI
+)
+
+
+def _render_room_teasers_html() -> str:
+    rows_html = "".join(_render_room_teaser_row_html(unit) for unit in TEASER_UNITS)
+    return (
+        '<section class="panel" id="room-teasers">'
+        f"<h2>{TEASER_HEADING_FI}</h2>"
+        f"<p>{TEASER_INTRO_FI}</p>"
+        f'<div class="room-teaser-list">{rows_html}</div>'
+        "</section>"
+    )
 
 
 HOTEL_HTML = """<!DOCTYPE html>
@@ -78,7 +135,6 @@ HOTEL_HTML = """<!DOCTYPE html>
       --accent: #b85c38;
       --danger: #8a2f2b;
       --success: #2f6f50;
-      --sand: #d8b98e;
       --radius: 24px;
     }
 
@@ -94,94 +150,78 @@ HOTEL_HTML = """<!DOCTYPE html>
       font-family: "Trebuchet MS", "Lucida Sans Unicode", sans-serif;
       font-size: 16px;
       font-weight: 400;
-      line-height: 1.6;
+      line-height: 1.5;
     }
 
-    h1, h2, h3 {
+    h1, h2 {
       font-family: Georgia, "Times New Roman", serif;
       font-weight: 700;
       margin: 0 0 16px;
     }
 
-    .hero {
-      background: linear-gradient(160deg, var(--sand) 0%, var(--bg) 62%);
-      padding: 72px 16px 56px;
-      text-align: center;
-    }
-
-    .hero-inner {
-      max-width: 860px;
-      margin: 0 auto;
-    }
-
-    .hero-eyebrow {
-      margin: 0 0 12px;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      font-size: 13px;
-      color: var(--accent);
-      font-weight: 700;
-    }
-
-    .hero h1 {
-      font-size: 52px;
-      line-height: 1.1;
-    }
-
-    .hero-tagline {
-      font-size: 19px;
-      line-height: 1.5;
-      margin: 16px 0 0;
+    h1 {
+      font-size: 28px;
+      line-height: 1.15;
     }
 
     h2 {
-      font-size: 30px;
+      font-size: 20px;
       line-height: 1.2;
     }
 
-    h3 {
-      font-size: 20px;
-      line-height: 1.2;
-      margin: 24px 0 12px;
+    .label {
+      font-size: 13px;
+      font-weight: 400;
+      line-height: 1.4;
+      color: var(--ink);
     }
 
     .shell {
-      width: min(1100px, calc(100% - 32px));
-      margin: 0 auto 56px;
+      width: min(1200px, calc(100% - 32px));
+      margin: 24px auto 48px;
       display: grid;
-      gap: 32px;
+      gap: 24px;
     }
 
     .panel {
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: var(--radius);
-      padding: 32px;
+      padding: 24px;
     }
 
-    .disclaimer-panel {
-      border: 2px solid var(--accent);
-      background: var(--panel-strong);
+    .top-nav {
+      display: flex;
+      gap: 24px;
+    }
+
+    .top-nav a {
+      color: var(--accent);
       font-weight: 700;
+      text-decoration: none;
     }
 
-    .disclaimer-panel p {
+    ol, ul {
       margin: 0;
+      padding-left: 20px;
     }
 
-    .room-card-grid {
+    li {
+      margin-bottom: 8px;
+    }
+
+    .room-teaser-list {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-      gap: 16px;
+      gap: 12px;
     }
 
-    .room-card {
+    .room-teaser-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 16px;
       border: 1px solid var(--line);
       border-radius: 16px;
-      padding: 16px;
-      background: var(--panel-strong);
-      display: grid;
-      gap: 6px;
     }
 
     .room-card-title {
@@ -194,162 +234,29 @@ HOTEL_HTML = """<!DOCTYPE html>
       font-size: 14px;
     }
 
-    ul {
-      margin: 0;
-      padding-left: 20px;
-    }
-
-    li {
-      margin-bottom: 8px;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-
-    th, td {
-      text-align: left;
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--line);
-    }
-
-    .top-nav {
-      display: flex;
-      gap: 24px;
-      justify-content: center;
-    }
-
-    .top-nav a {
-      color: var(--accent);
-      font-weight: 700;
-      text-decoration: none;
-    }
-
     @media (max-width: 980px) {
-      .hero h1 {
-        font-size: 36px;
-      }
-
-      .room-card-grid {
-        grid-template-columns: 1fr;
-      }
-
       .panel {
         padding: 20px;
+      }
+
+      .room-teaser-row {
+        flex-direction: column;
       }
     }
   </style>
 </head>
 <body>
-  <header class="hero">
-    <div class="hero-inner">
-      <p class="hero-eyebrow">Hotelli Frami</p>
-      <h1>Koti Framinrannassa, Jokipuistossa ja Kampusaukiolla</h1>
-      <p class="hero-tagline">Kolme aluetta, __UNIT_COUNT__ kohdetta ja yksi lämmin vastaanotto.</p>
-    </div>
-  </header>
   <main class="shell">
-    <section class="panel disclaimer-panel" id="demo-disclaimer">
+    <nav class="top-nav">
+      <a href="__STATS_LINK__">Demon tilastot</a>
+      <a href="__LIVE_LINK__">Live-näkymä</a>
+    </nav>
+    <h1>Hotelli Frami</h1>
+    <section class="panel" id="demo-disclaimer">
       <p>__DEMO_DISCLAIMER_FI__</p>
     </section>
-    <section class="panel" id="majoituskohteemme">
-      <h2>Majoituskohteemme</h2>
-      __ROOM_CARDS_HTML__
-    </section>
-    <section class="panel" id="hyva-tietaa">
-      <h2>Hyvä tietää</h2>
-      <ul>
-        <li>Sisäänkirjautuminen alkaa klo 15:00.</li>
-        <li>Uloskirjautuminen on viimeistään klo 11:00.</li>
-        <li>Avainkoodi toimitetaan tekstiviestillä varauksen puhelinnumeroon tulopäivänä viimeistään klo 15.</li>
-        <li>Vastaanotto toimii itsepalveluperiaatteella.</li>
-        <li>Hiljaisuus on klo 23:00–08:00.</li>
-        <li>Aamiaista ei tarjota. Keittomahdollisuus löytyy omatoimista aamupalan valmistusta varten.</li>
-      </ul>
-    </section>
-    <section class="panel" id="hintaan-sisaltyy">
-      <h2>Hintaan sisältyy</h2>
-      <ul>
-        <li>liinavaatteet ja pyyhkeet</li>
-        <li>loppusiivous</li>
-        <li>WiFi</li>
-        <li>ilmainen pysäköinti</li>
-      </ul>
-    </section>
-    <section class="panel" id="varustelu">
-      <h2>Varustelu</h2>
-      <ul>
-        <li>Kaikissa kohteissa on WiFi, TV ja keittomahdollisuus.</li>
-        <li>Osassa kohteita on sauna ja jäähdytys tai ilmastointi.</li>
-        <li>Oma kylpyhuone on kaikissa kohteissa paitsi hostelleissa.</li>
-        <li>Hostelleissa on yhteiset wc- ja suihkutilat.</li>
-      </ul>
-    </section>
-    <section class="panel" id="kaytannot">
-      <h2>Käytännöt</h2>
-      <ul>
-        <li>Matkasänky lapselle maksaa 24,00 € / yö. Se on varattava etukäteen, ja saatavuus on rajallinen.</li>
-        <li>Lemmikit eivät ole sallittuja missään kohteessa.</li>
-        <li>Kaikki kohteet ovat savuttomia.</li>
-        <li>Vain varauksessa ilmoitettu määrä henkilöitä saa yöpyä.</li>
-      </ul>
-    </section>
-    <section class="panel" id="esteettomyys-ja-sahkoauton-lataus">
-      <h2>Esteettömyys ja sähköauton lataus</h2>
-      <ul>
-        <li>Huoneistohotelli Framinranta on esteetön. Muut kohteet eivät ole esteettömiä.</li>
-        <li>Sähköauton lataus on mahdollista vain Huoneistohotelli Framinrannassa. Lataus toimii FramiCharge-sovelluksella.</li>
-      </ul>
-    </section>
-    <section class="panel" id="peruutusehdot">
-      <h2>Peruutusehdot</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Tilanne</th>
-            <th>Maksuton peruutus viimeistään</th>
-            <th>Myöhempi peruutus</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Kesäsesonki</td>
-            <td>7 vrk ennen saapumista</td>
-            <td>Veloitetaan 100 %</td>
-          </tr>
-          <tr>
-            <td>Sesongin ulkopuolella</td>
-            <td>5 vrk ennen saapumista</td>
-            <td>Veloitetaan 100 %</td>
-          </tr>
-          <tr>
-            <td>Tapahtuma-ajat</td>
-            <td>30 vrk ennen saapumista</td>
-            <td>Veloitetaan 100 %</td>
-          </tr>
-          <tr>
-            <td>No-show</td>
-            <td>–</td>
-            <td>Veloitetaan 100 %</td>
-          </tr>
-        </tbody>
-      </table>
-    </section>
-    <section class="panel" id="kulkuyhteydet">
-      <h2>Kulkuyhteydet</h2>
-      <ul>
-        <li>Kampusaukion huoneistot, Kampusaukio 7: aivan juna-aseman vieressä. Juna kuljettaa kesällä Framipuistoon ja takaisin.</li>
-        <li>Framinrannan keskustan kohteet, Framinkuja 4: juna-asemalle 0,9 km. Muuta julkista liikennettä ei ole.</li>
-        <li>Jokipuiston huoneistot: etäisyys Framipuistosta 7 km, autolla noin 8 minuuttia. Julkista liikennettä ei ole.</li>
-      </ul>
-    </section>
-    <footer class="panel">
-      <nav class="top-nav">
-        <a href="__LIVE_LINK__">Live-näkymä</a>
-        <a href="__STATS_LINK__">Demon tilastot</a>
-      </nav>
-    </footer>
+    __HOW_IT_WORKS_HTML__
+    __ROOM_TEASERS_HTML__
   </main>
 </body>
 </html>
@@ -361,8 +268,8 @@ def _render_hotel_html(request: Request) -> str:
     stats_link = build_request_app_path(request, "/tilastot")
     return (
         HOTEL_HTML.replace("__DEMO_DISCLAIMER_FI__", DEMO_DISCLAIMER_FI)
-        .replace("__ROOM_CARDS_HTML__", _render_unit_cards())
-        .replace("__UNIT_COUNT__", str(len(UNITS)))
+        .replace("__HOW_IT_WORKS_HTML__", _render_how_it_works_html(request))
+        .replace("__ROOM_TEASERS_HTML__", _render_room_teasers_html())
         .replace("__LIVE_LINK__", html.escape(live_link, quote=True))
         .replace("__STATS_LINK__", html.escape(stats_link, quote=True))
     )
