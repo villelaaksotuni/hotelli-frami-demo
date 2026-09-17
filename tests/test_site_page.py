@@ -88,7 +88,7 @@ class HotelPageRenderingTests(unittest.TestCase):
         first_unit = next(unit for unit in UNITS if unit.area == first_area)
         self.assertEqual(first_unit, TEASER_UNITS[0])
         self.assertIn(first_unit.display_name, self.body)
-        self.assertIn(f"alkaen {first_unit.nightly_rate_eur} € / yö", self.body)
+        self.assertIn(f"{first_unit.nightly_rate_eur} € / yö", self.body)
         self.assertIn(_pluralize_fi(first_unit.capacity, "henkilö", "henkilöä"), self.body)
         self.assertIn(_pluralize_fi(first_unit.min_nights, "yö", "yötä"), self.body)
 
@@ -186,7 +186,7 @@ class TeaserRegistryAndNavConsistencyTests(unittest.TestCase):
         for area, unit in zip(ROOM_AREAS_FI, TEASER_UNITS):
             self.assertEqual(unit.area, area)
             self.assertIn(unit.display_name, self.hotel_body)
-            self.assertIn(f"alkaen {unit.nightly_rate_eur} € / yö", self.hotel_body)
+            self.assertIn(f"{unit.nightly_rate_eur} € / yö", self.hotel_body)
             self.assertIn(
                 _pluralize_fi(unit.capacity, "henkilö", "henkilöä"), self.hotel_body
             )

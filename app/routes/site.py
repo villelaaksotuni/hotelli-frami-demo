@@ -1,18 +1,17 @@
 from __future__ import annotations
 
 import html
-import logging
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
 from app.config.settings import settings
+from app.models.reservation import Unit
 from app.path_prefix import build_request_app_path
 from app.services.sms_utils import normalize_phone
 from app.services.unit_registry import UNITS
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
 
 HOTEL_PAGE_PATH = "/"
 
@@ -55,7 +54,7 @@ def _render_how_it_works_html(request: Request) -> str:
             f'Soita numeroon <a href="tel:{escaped_phone}">{escaped_phone}</a>.'
         )
     else:
-        phone_step_html = PHONE_NOT_CONFIGURED_FI
+        phone_step_html = html.escape(PHONE_NOT_CONFIGURED_FI, quote=True)
 
     escaped_live_link = html.escape(live_link, quote=True)
     live_step_html = (
@@ -65,21 +64,21 @@ def _render_how_it_works_html(request: Request) -> str:
 
     return (
         '<section class="panel" id="how-it-works">'
-        f"<h2>{HOW_IT_WORKS_HEADING_FI}</h2>"
-        f"<p>{HOW_IT_WORKS_INTRO_FI}</p>"
+        f"<h2>{html.escape(HOW_IT_WORKS_HEADING_FI, quote=True)}</h2>"
+        f"<p>{html.escape(HOW_IT_WORKS_INTRO_FI, quote=True)}</p>"
         "<ol>"
         f"<li>{phone_step_html}</li>"
         f"<li>{live_step_html}</li>"
-        f"<li>{RESERVE_STEP_FI}</li>"
+        f"<li>{html.escape(RESERVE_STEP_FI, quote=True)}</li>"
         "</ol>"
         "</section>"
     )
 
 
-def _render_room_teaser_row_html(unit) -> str:
+def _render_room_teaser_row_html(unit: Unit) -> str:
     display_name = html.escape(unit.display_name, quote=True)
     area_text = html.escape(unit.area, quote=True)
-    rate_text = html.escape(f"alkaen {unit.nightly_rate_eur} € / yö", quote=True)
+    rate_text = html.escape(f"{unit.nightly_rate_eur} € / yö", quote=True)
     capacity_text = html.escape(
         f"enintään {_pluralize_fi(unit.capacity, 'henkilö', 'henkilöä')}",
         quote=True,
@@ -103,9 +102,14 @@ def _render_room_teaser_row_html(unit) -> str:
     )
 
 
-TEASER_UNITS: tuple = tuple(
-    next(unit for unit in UNITS if unit.area == area) for area in ROOM_AREAS_FI
-)
+def _first_unit_in_area(area: str) -> Unit:
+    for unit in UNITS:
+        if unit.area == area:
+            return unit
+    raise ValueError(f"unit_registry.UNITS has no unit in area {area!r}")
+
+
+TEASER_UNITS: tuple[Unit, ...] = tuple(_first_unit_in_area(area) for area in ROOM_AREAS_FI)
 
 
 def _render_room_teasers_html() -> str:
