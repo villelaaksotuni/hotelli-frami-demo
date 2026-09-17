@@ -719,19 +719,6 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 """
 
 
-@router.get("/", response_class=HTMLResponse, include_in_schema=False)
-async def dashboard_home(
-    request: Request,
-    admin_user: Annotated[str, Depends(require_admin_access)],
-) -> HTMLResponse:
-    del admin_user
-    return HTMLResponse(
-        content=_render_dashboard_html(
-            build_request_app_path(request, "/api/dashboard")
-        )
-    )
-
-
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard_page(
     request: Request,
