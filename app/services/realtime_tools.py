@@ -15,6 +15,26 @@ from app.services.reservation_provider import ReservationValidationError, reserv
 logger = logging.getLogger(__name__)
 
 
+def _record_capability_invocation(session: Optional[CallSession], tool_name: str) -> None:
+    """Increment the durable per-tool invocation counter on session.metadata.
+
+    Degrades to a no-op on any malformed shape rather than raising — this runs
+    inside live call dispatch and must never break a call. The availability
+    dispatch branch has no `session is None` guard of its own (unlike
+    create-reservation), which is exactly why this helper carries the guard.
+    """
+    if session is None:
+        return
+    counts = session.metadata.get("capability_invocation_counts")
+    if not isinstance(counts, dict):
+        counts = {}
+    current = counts.get(tool_name)
+    if not isinstance(current, int):
+        current = 0
+    counts[tool_name] = current + 1
+    session.add_metadata({"capability_invocation_counts": counts})
+
+
 async def execute_realtime_tool(
     name: str,
     arguments_json: Optional[str],
@@ -33,6 +53,7 @@ async def execute_realtime_tool(
 
     if name == AVAILABILITY_TOOL_NAME:
         live_broadcast_hub.publish_capability(tool=name)
+        _record_capability_invocation(session, name)
         live_broadcast_hub.publish_agent_state(tool=name, arguments=arguments)
         logger.info("Live agent-state published tool=%s", name)
         try:

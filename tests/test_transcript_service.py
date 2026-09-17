@@ -98,7 +98,14 @@ class TranscriptServiceTests(unittest.TestCase):
         self.assertEqual(record["metadata"]["reservation_count"], 1)
         self.assertEqual(
             set(record["metadata"].keys()),
-            {"direction", "counterparty_label", "has_last_error", "reservation_created", "reservation_count"},
+            {
+                "direction",
+                "counterparty_label",
+                "has_last_error",
+                "reservation_created",
+                "reservation_count",
+                "capability_invocation_counts",
+            },
         )
 
     def test_write_session_logs_creates_session_and_summary_files_without_raw_turns_file(self):

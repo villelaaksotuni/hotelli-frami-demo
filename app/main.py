@@ -13,6 +13,7 @@ from app.routes.dashboard import router as dashboard_router
 from app.routes.feedback import router as feedback_router
 from app.routes.health import router as health_router
 from app.routes.live import router as live_router
+from app.routes.stats import router as stats_router
 from app.routes.voice import router as voice_router
 from app.services.daily_summary_scheduler import DailySummaryScheduler
 from app.services.daily_summary import daily_summary_service
@@ -121,3 +122,4 @@ app.include_router(availability_router)
 app.include_router(admin_prompt_router)
 app.include_router(feedback_router)
 app.include_router(live_router)
+app.include_router(stats_router)
