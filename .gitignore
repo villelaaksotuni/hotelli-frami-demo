@@ -8,7 +8,7 @@ venv/
 .env
 conversations_log/*.json
 data/*.json
-scripts/real_client_markers.txt
+scripts/
 tests/.tmp_*/
 build/
 dist/
