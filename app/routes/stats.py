@@ -8,6 +8,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
 from app.path_prefix import build_request_app_path
+from app.routes.site import HOTEL_PAGE_PATH
 from app.services.public_stats import PUBLIC_CAPABILITY_TOOLS, build_public_stats
 from app.services.realtime_session import (
     AVAILABILITY_TOOL_NAME,
@@ -168,7 +169,7 @@ STATS_HTML = """<!DOCTYPE html>
 </head>
 <body>
   <main class="shell">
-    <nav class="top-nav"><a href="__LIVE_LINK__">Live-näkymä</a></nav>
+    <nav class="top-nav"><a href="__HOTEL_LINK__">Hotelli Frami</a> <a href="__LIVE_LINK__">Live-näkymä</a></nav>
     <h1>Demon tilastot</h1>
     <section class="panel">
       <p>Tämä sivu näyttää vain kaikkien demopuheluiden yhteenlasketut kokonaisluvut. Yksittäisiä puheluita, soittajia tai puheluiden sisältöä ei näytetä eikä niitä ole mahdollista hakea tästä näkymästä.</p>
@@ -248,15 +249,18 @@ def _render_stats_content_html(stats: dict[str, Any]) -> str:
 
 def _render_stats_html(*, request: Request, stats: dict[str, Any] | None) -> str:
     live_link = build_request_app_path(request, "/live")
+    hotel_link = build_request_app_path(request, HOTEL_PAGE_PATH)
 
     if stats is None or int(stats.get("total_calls") or 0) == 0:
         content_html = _render_empty_state_html()
     else:
         content_html = _render_stats_content_html(stats)
 
-    return STATS_HTML.replace(
-        "__LIVE_LINK__", html.escape(live_link, quote=True)
-    ).replace("__CONTENT_HTML__", content_html)
+    return (
+        STATS_HTML.replace("__LIVE_LINK__", html.escape(live_link, quote=True))
+        .replace("__HOTEL_LINK__", html.escape(hotel_link, quote=True))
+        .replace("__CONTENT_HTML__", content_html)
+    )
 
 
 @router.get("/tilastot")

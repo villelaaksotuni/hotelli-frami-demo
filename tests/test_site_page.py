@@ -6,8 +6,36 @@ import unittest
 
 from starlette.requests import Request
 
+from app.config import default_system_message as default_system_message_module
+from app.config.settings import settings
 from app.routes.site import DEMO_DISCLAIMER_FI, HOTEL_PAGE_PATH, hotel_page
+from app.routes.stats import stats_page
 from app.services.unit_registry import UNITS
+
+# The mechanical half of D-02: every one of these hotel facts must appear
+# verbatim both on the rendered hotel page and in the canon source text
+# (app/config/default_system_message.py). The direction matters — the page
+# may state a subset of the canon, never a fact the canon does not contain.
+CANON_FACTS_FI = (
+    "klo 15:00",
+    "klo 11:00",
+    "liinavaatteet ja pyyhkeet",
+    "loppusiivous",
+    "ilmainen pysäköinti",
+    "24,00 €",
+    "Lemmikit eivät ole sallittuja missään kohteessa.",
+    "Kaikki kohteet ovat savuttomia.",
+    "Huoneistohotelli Framinranta on esteetön.",
+    "FramiCharge",
+    "Kesäsesonki",
+    "Sesongin ulkopuolella",
+    "Tapahtuma-ajat",
+    "No-show",
+    "Veloitetaan 100 %",
+    "Kampusaukion huoneistot, Kampusaukio 7: aivan juna-aseman vieressä.",
+    "Framinrannan keskustan kohteet, Framinkuja 4: juna-asemalle 0,9 km.",
+    "Jokipuiston huoneistot: etäisyys Framipuistosta 7 km, autolla noin 8 minuuttia.",
+)
 
 
 def _build_request(path: str = "/") -> Request:
@@ -140,6 +168,47 @@ class HotelPageRenderingTests(unittest.TestCase):
         for extra_color in extra:
             self.assertIn(extra_color, root_block)
         self.assertIn("@media (max-width: 980px)", self.body)
+
+
+class CanonAndRegistryConsistencyTests(unittest.TestCase):
+    def setUp(self) -> None:
+        hotel_response = asyncio.run(hotel_page(_build_request("/")))
+        self.hotel_body = hotel_response.body.decode("utf-8")
+        stats_response = asyncio.run(stats_page(_build_request("/tilastot")))
+        self.stats_body = stats_response.body.decode("utf-8")
+
+    def test_canon_facts_asserted_on_page_are_grounded_in_canon_source(self):
+        canon_source = default_system_message_module.DEFAULT_SYSTEM_MESSAGE
+        for fact in CANON_FACTS_FI:
+            self.assertIn(fact, self.hotel_body, f"missing from hotel page: {fact!r}")
+            self.assertIn(fact, canon_source, f"missing from canon source: {fact!r}")
+
+    def test_registry_consistency_room_cards_match_units_exactly(self):
+        card_titles = re.findall(r'class="room-card-title">([^<]+)<', self.hotel_body)
+        self.assertEqual(set(card_titles), {unit.display_name for unit in UNITS})
+        self.assertEqual(len(card_titles), len(UNITS))
+
+        card_details = re.findall(r'class="room-card-detail">([^<]+)<', self.hotel_body)
+        for unit in UNITS:
+            self.assertIn(f"alkaen {unit.nightly_rate_eur} € / yö", card_details)
+            self.assertIn(
+                f"enintään {_pluralize_fi(unit.capacity, 'henkilö', 'henkilöä')}",
+                card_details,
+            )
+            self.assertIn(
+                f"vähintään {_pluralize_fi(unit.min_nights, 'yö', 'yötä')}",
+                card_details,
+            )
+
+    def test_hotel_and_stats_pages_link_to_each_other(self):
+        self.assertIn('href="/live"', self.hotel_body)
+        self.assertIn('href="/tilastot"', self.hotel_body)
+        self.assertIn(f'href="{HOTEL_PAGE_PATH}"', self.stats_body)
+
+    def test_default_language_and_public_pages_declare_finnish(self):
+        self.assertEqual(settings.default_language, "fi")
+        self.assertIn('lang="fi"', self.hotel_body)
+        self.assertIn('lang="fi"', self.stats_body)
 
 
 if __name__ == "__main__":
