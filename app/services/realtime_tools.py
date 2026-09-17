@@ -88,6 +88,7 @@ async def execute_realtime_tool(
                 "message_for_assistant": "Varausta ei voitu yhdistää puheluun juuri nyt.",
             }
         live_broadcast_hub.publish_capability(tool=name)
+        _record_capability_invocation(session, name)
         live_broadcast_hub.publish_agent_state(tool=name, arguments=arguments)
         logger.info("Live agent-state published tool=%s", name)
         try:
@@ -118,6 +119,7 @@ async def execute_realtime_tool(
 
     if name == CALLBACK_REQUEST_SMS_TOOL_NAME:
         live_broadcast_hub.publish_capability(tool=name)
+        _record_capability_invocation(session, name)
         live_broadcast_hub.publish_agent_state(tool=name, arguments=arguments)
         logger.info("Live agent-state published tool=%s", name)
         try:
