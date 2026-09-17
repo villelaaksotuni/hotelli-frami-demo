@@ -121,7 +121,7 @@ def _build_capability_invocation_counts(metadata: Dict[str, Any]) -> Dict[str, i
     return {
         str(tool_name): count
         for tool_name, count in raw_counts.items()
-        if isinstance(count, int)
+        if isinstance(count, int) and not isinstance(count, bool)
     }
 
 

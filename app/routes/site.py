@@ -246,7 +246,7 @@ HOTEL_HTML = """<!DOCTYPE html>
     <div class="hero-inner">
       <p class="hero-eyebrow">Hotelli Frami</p>
       <h1>Koti Framinrannassa, Jokipuistossa ja Kampusaukiolla</h1>
-      <p class="hero-tagline">Kolme aluetta, kolmetoista kohdetta ja yksi lämmin vastaanotto.</p>
+      <p class="hero-tagline">Kolme aluetta, __UNIT_COUNT__ kohdetta ja yksi lämmin vastaanotto.</p>
     </div>
   </header>
   <main class="shell">
@@ -362,6 +362,7 @@ def _render_hotel_html(request: Request) -> str:
     return (
         HOTEL_HTML.replace("__DEMO_DISCLAIMER_FI__", DEMO_DISCLAIMER_FI)
         .replace("__ROOM_CARDS_HTML__", _render_unit_cards())
+        .replace("__UNIT_COUNT__", str(len(UNITS)))
         .replace("__LIVE_LINK__", html.escape(live_link, quote=True))
         .replace("__STATS_LINK__", html.escape(stats_link, quote=True))
     )

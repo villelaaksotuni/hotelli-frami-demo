@@ -81,7 +81,7 @@ def build_public_stats(*, log_dir: Path | None = None) -> dict[str, Any]:
             if isinstance(counts, dict):
                 for tool in PUBLIC_CAPABILITY_TOOLS:
                     value = counts.get(tool)
-                    if isinstance(value, int):
+                    if isinstance(value, int) and not isinstance(value, bool):
                         capability_usage[tool] += value
 
             if _record_has_reservation(metadata):

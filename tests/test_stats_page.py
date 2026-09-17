@@ -53,6 +53,31 @@ class StatsPageRenderingTests(unittest.TestCase):
         self.assertIn(">20<", body)
         self.assertIn(">2<", body)
 
+    def test_reservation_headline_and_capability_row_use_distinct_labels_when_values_diverge(self):
+        stats = {
+            "total_calls": 12,
+            "reservation_calls": 4,
+            "average_duration_seconds": 95.0,
+            "capability_usage": {
+                "check_availability": 20,
+                "create_reservation": 9,
+                "send_owner_callback_request_sms": 2,
+            },
+            "has_sufficient_sample": True,
+        }
+        body = self._render(stats)
+        self.assertIn('id="stat-reservation-calls">4<', body)
+        self.assertIn(">9<", body)
+        # The confirmed-reservation headline and the raw invocation-attempt row must
+        # never share a label — they count different things and can diverge (WR-01).
+        headline_index = body.index('id="stat-reservation-calls"')
+        headline_label_start = body.rindex('<span class="label">', 0, headline_index)
+        headline_label = body[headline_label_start:headline_index]
+        capability_row_index = body.index(">9<")
+        capability_label_start = body.rindex('<span class="label">', 0, capability_row_index)
+        capability_label = body[capability_label_start:capability_row_index]
+        self.assertNotEqual(headline_label, capability_label)
+
     def test_small_sample_shows_exact_totals_and_not_enough_data_elsewhere(self):
         stats = {
             "total_calls": 2,

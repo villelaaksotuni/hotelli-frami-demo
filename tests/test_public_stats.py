@@ -182,6 +182,18 @@ class PublicStatsAggregationTests(unittest.TestCase):
         self.assertEqual(stats["capability_usage"][AVAILABILITY_TOOL_NAME], 0)
         self.assertEqual(stats["total_calls"], 1)
 
+    def test_bool_capability_count_contributes_zero_not_one(self):
+        # bool is an int subclass in Python; a stray True/False must not silently
+        # contribute 1/0 to the sum (WR-02).
+        _write_session_file(
+            self.temp_dir,
+            "boolflag",
+            metadata={"capability_invocation_counts": {AVAILABILITY_TOOL_NAME: True}},
+        )
+        stats = build_public_stats(log_dir=self.temp_dir)
+        self.assertEqual(stats["capability_usage"][AVAILABILITY_TOOL_NAME], 0)
+        self.assertEqual(stats["total_calls"], 1)
+
     def test_reservation_calls_counts_only_true_flagged_records(self):
         _write_session_file(self.temp_dir, "a", metadata={"reservation_created": True})
         _write_session_file(self.temp_dir, "b", metadata={"reservation_created": True})

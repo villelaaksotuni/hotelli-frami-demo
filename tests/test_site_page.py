@@ -72,6 +72,11 @@ class HotelPageRenderingTests(unittest.TestCase):
         card_titles = re.findall(r'class="room-card-title">([^<]+)<', self.body)
         self.assertEqual(len(card_titles), len(UNITS))
 
+    def test_hero_tagline_unit_count_matches_units_registry(self):
+        match = re.search(r'class="hero-tagline">Kolme aluetta, (\d+) kohdetta', self.body)
+        self.assertIsNotNone(match, "hero tagline unit count not found")
+        self.assertEqual(int(match.group(1)), len(UNITS))
+
     def test_each_unit_rate_capacity_and_min_nights_render_and_group_by_area(self):
         for unit in UNITS:
             self.assertIn(f"{unit.nightly_rate_eur} €", self.body)

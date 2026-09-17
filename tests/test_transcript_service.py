@@ -5,7 +5,11 @@ from pathlib import Path
 
 from app.models.call import CallConfig, CallSession, TranscriptEntry
 from app.services.conversation_anonymizer import AnonymizedConversationSummary
-from app.services.transcript_service import _build_session_record, _write_session_logs
+from app.services.transcript_service import (
+    _build_capability_invocation_counts,
+    _build_session_record,
+    _write_session_logs,
+)
 
 
 class TranscriptServiceTests(unittest.TestCase):
@@ -107,6 +111,14 @@ class TranscriptServiceTests(unittest.TestCase):
                 "capability_invocation_counts",
             },
         )
+
+    def test_capability_invocation_counts_excludes_bool_values(self):
+        # bool is an int subclass in Python; a stray True/False must not silently
+        # pass through as a count (WR-02).
+        counts = _build_capability_invocation_counts(
+            {"capability_invocation_counts": {"check_availability": True, "create_reservation": 3}}
+        )
+        self.assertEqual(counts, {"create_reservation": 3})
 
     def test_write_session_logs_creates_session_and_summary_files_without_raw_turns_file(self):
         session = CallSession(

@@ -27,7 +27,7 @@ EMPTY_STATE_BODY_FI = (
 
 CAPABILITY_USAGE_LABELS_FI: dict[str, str] = {
     AVAILABILITY_TOOL_NAME: "Saatavuuden tarkistukset",
-    CREATE_RESERVATION_TOOL_NAME: "Tehtyjä demovarauksia",
+    CREATE_RESERVATION_TOOL_NAME: "Varausyrityksiä",
     CALLBACK_REQUEST_SMS_TOOL_NAME: "Yhteydenottopyyntöjä",
 }
 
