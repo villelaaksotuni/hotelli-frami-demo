@@ -110,6 +110,18 @@ def _build_redacted_metadata(session: CallSession) -> Dict[str, Any]:
         "has_last_error": bool(session.last_error),
         "reservation_created": reservation_count > 0,
         "reservation_count": reservation_count,
+        "capability_invocation_counts": _build_capability_invocation_counts(metadata),
+    }
+
+
+def _build_capability_invocation_counts(metadata: Dict[str, Any]) -> Dict[str, int]:
+    raw_counts = metadata.get("capability_invocation_counts")
+    if not isinstance(raw_counts, dict):
+        return {}
+    return {
+        str(tool_name): count
+        for tool_name, count in raw_counts.items()
+        if isinstance(count, int)
     }
 
 
