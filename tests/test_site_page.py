@@ -12,6 +12,7 @@ from app.config.settings import settings
 from app.routes.site import (
     DEMO_DISCLAIMER_FI,
     HOTEL_PAGE_PATH,
+    PHONE_NOT_CONFIGURED_FI,
     RESERVE_STEP_FI,
     ROOM_AREAS_FI,
     TEASER_UNITS,
@@ -179,6 +180,36 @@ class TeaserRegistryAndNavConsistencyTests(unittest.TestCase):
         self.assertEqual(settings.default_language, "fi")
         self.assertIn('lang="fi"', self.hotel_body)
         self.assertIn('lang="fi"', self.stats_body)
+
+    def test_all_teaser_rows_render_matching_registry(self):
+        self.assertEqual(len(TEASER_UNITS), len(ROOM_AREAS_FI))
+        for area, unit in zip(ROOM_AREAS_FI, TEASER_UNITS):
+            self.assertEqual(unit.area, area)
+            self.assertIn(unit.display_name, self.hotel_body)
+            self.assertIn(f"alkaen {unit.nightly_rate_eur} € / yö", self.hotel_body)
+            self.assertIn(
+                _pluralize_fi(unit.capacity, "henkilö", "henkilöä"), self.hotel_body
+            )
+            self.assertIn(
+                _pluralize_fi(unit.min_nights, "yö", "yötä"), self.hotel_body
+            )
+
+    def test_excluded_units_not_rendered(self):
+        excluded = [unit for unit in UNITS if unit not in TEASER_UNITS]
+        self.assertTrue(excluded)
+        for unit in excluded:
+            self.assertNotIn(unit.display_name, self.hotel_body)
+
+    def test_phone_fallback_when_not_configured(self):
+        settings_none = dataclasses.replace(settings, twilio_phone_number=None)
+        with patch("app.routes.site.settings", settings_none):
+            body = asyncio.run(hotel_page(_build_request())).body.decode("utf-8")
+        self.assertIn(PHONE_NOT_CONFIGURED_FI, body)
+        self.assertNotIn("tel:", body)
+
+    def test_structural_panel_count_and_no_table(self):
+        self.assertEqual(self.hotel_body.count('<section class="panel"'), 3)
+        self.assertNotIn("<table", self.hotel_body)
 
 
 if __name__ == "__main__":
