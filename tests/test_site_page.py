@@ -211,7 +211,10 @@ class TeaserRegistryAndNavConsistencyTests(unittest.TestCase):
         self.assertNotIn("tel:", body)
 
     def test_structural_panel_count_and_no_table(self):
-        self.assertEqual(self.hotel_body.count('<section class="panel"'), 3)
+        self.assertEqual(self.hotel_body.count("<section"), 3)
+        self.assertIn('id="demo-disclaimer"', self.hotel_body)
+        self.assertIn('id="how-it-works"', self.hotel_body)
+        self.assertIn('id="room-teasers"', self.hotel_body)
         self.assertNotIn("<table", self.hotel_body)
 
 
