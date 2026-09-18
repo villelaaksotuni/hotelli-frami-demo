@@ -9,6 +9,7 @@ venv/
 conversations_log/*.json
 data/*.json
 scripts/
+ref/
 tests/.tmp_*/
 build/
 dist/
