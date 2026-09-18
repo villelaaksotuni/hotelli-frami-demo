@@ -166,6 +166,55 @@ class HotelPageRenderingTests(unittest.TestCase):
             self.assertIn(extra_hex, root_block_text)
         self.assertIn("@media (max-width: 980px)", self.body)
 
+    def test_h1_is_dominant_uppercase_display_headline(self):
+        match = re.search(r"h1\s*\{([^}]*)\}", self.body)
+        self.assertIsNotNone(match)
+        group = match.group(1)
+        self.assertIn("text-transform: uppercase", group)
+        font_size_match = re.search(r"font-size:\s*(\d+)px", group)
+        self.assertIsNotNone(font_size_match)
+        font_size = int(font_size_match.group(1))
+        self.assertGreaterEqual(font_size, 72)
+        self.assertLessEqual(font_size, 96)
+        letter_spacing_match = re.search(r"letter-spacing:\s*(-?[\d.]+)em", group)
+        self.assertIsNotNone(letter_spacing_match)
+        letter_spacing = float(letter_spacing_match.group(1))
+        self.assertLessEqual(letter_spacing, -0.02)
+
+    def test_h1_scales_down_at_narrow_breakpoint(self):
+        desktop_match = re.search(r"h1\s*\{([^}]*)\}", self.body)
+        self.assertIsNotNone(desktop_match)
+        desktop_font_size = int(
+            re.search(r"font-size:\s*(\d+)px", desktop_match.group(1)).group(1)
+        )
+
+        media_section = self.body.split("@media (max-width: 980px)", 1)[1]
+        mobile_match = re.search(r"h1\s*\{([^}]*)\}", media_section)
+        self.assertIsNotNone(mobile_match)
+        mobile_font_size_match = re.search(
+            r"font-size:\s*(\d+)px", mobile_match.group(1)
+        )
+        self.assertIsNotNone(mobile_font_size_match)
+        mobile_font_size = int(mobile_font_size_match.group(1))
+        self.assertGreaterEqual(mobile_font_size, 40)
+        self.assertLessEqual(mobile_font_size, 48)
+        self.assertLess(mobile_font_size, desktop_font_size)
+
+    def test_label_and_nav_text_use_ink_not_accent_gold(self):
+        self.assertEqual(self.body.count("var(--accent-gold)"), 1)
+
+        label_match = re.search(r"\.label\s*\{([^}]*)\}", self.body)
+        self.assertIsNotNone(label_match)
+        self.assertIn("color: var(--ink)", label_match.group(1))
+
+        nav_match = re.search(r"\.top-nav a\s*\{([^}]*)\}", self.body)
+        self.assertIsNotNone(nav_match)
+        self.assertIn("color: var(--ink)", nav_match.group(1))
+
+        disclaimer_match = re.search(r"#demo-disclaimer\s*\{([^}]*)\}", self.body)
+        self.assertIsNotNone(disclaimer_match)
+        self.assertIn("var(--accent-gold)", disclaimer_match.group(1))
+
 
 class TeaserRegistryAndNavConsistencyTests(unittest.TestCase):
     def setUp(self) -> None:

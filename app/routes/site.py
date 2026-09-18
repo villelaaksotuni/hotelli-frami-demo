@@ -164,9 +164,10 @@ HOTEL_HTML = """<!DOCTYPE html>
     }
 
     h1 {
-      font-size: 44px;
-      line-height: 1.2;
-      letter-spacing: -0.015em;
+      font-size: 88px;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+      text-transform: uppercase;
     }
 
     h2 {
@@ -179,7 +180,7 @@ HOTEL_HTML = """<!DOCTYPE html>
       font-size: 12px;
       font-weight: 600;
       line-height: 1.4;
-      color: var(--accent-gold);
+      color: var(--ink);
       text-transform: uppercase;
       letter-spacing: 0.09em;
     }
@@ -215,7 +216,7 @@ HOTEL_HTML = """<!DOCTYPE html>
     }
 
     .top-nav a {
-      color: var(--accent-gold);
+      color: var(--ink);
       font-weight: 700;
       text-decoration: none;
       text-transform: uppercase;
@@ -269,6 +270,12 @@ HOTEL_HTML = """<!DOCTYPE html>
 
       .room-teaser-row {
         flex-direction: column;
+      }
+
+      h1 {
+        font-size: 44px;
+        line-height: 1.15;
+        letter-spacing: -0.02em;
       }
     }
   </style>
