@@ -158,7 +158,7 @@ class HotelPageRenderingTests(unittest.TestCase):
         hex_colors = set(re.findall(r"#[0-9a-fA-F]{6}\b", self.body))
         allowed_hex = {"#f4efe6", "#b85c38", "#8a2f2b", "#2f6f50", "#173126"}
         extra = hex_colors - allowed_hex
-        self.assertLessEqual(len(extra), 2)
+        self.assertEqual(extra, {"#6b5327"})
         root_block_match = re.search(r":root\s*\{(.*?)\}", self.body, re.DOTALL)
         self.assertIsNotNone(root_block_match)
         root_block_text = root_block_match.group(1)
@@ -216,6 +216,14 @@ class TeaserRegistryAndNavConsistencyTests(unittest.TestCase):
         self.assertIn('id="how-it-works"', self.hotel_body)
         self.assertIn('id="room-teasers"', self.hotel_body)
         self.assertNotIn("<table", self.hotel_body)
+
+    def test_disclaimer_keeps_boxed_panel_class_while_content_sections_use_dividers(self):
+        # The disclaimer deliberately keeps the bordered "panel" treatment (and gains
+        # extra visual weight via #demo-disclaimer) so elevating the rest of the page's
+        # typography/nav can never diminish it relative to the surrounding content.
+        self.assertIn('<section class="panel" id="demo-disclaimer">', self.hotel_body)
+        self.assertIn('<section class="section-divider" id="how-it-works">', self.hotel_body)
+        self.assertIn('<section class="section-divider" id="room-teasers">', self.hotel_body)
 
 
 if __name__ == "__main__":

@@ -136,8 +136,7 @@ HOTEL_HTML = """<!DOCTYPE html>
       --panel-strong: rgba(255, 248, 236, 0.94);
       --line: rgba(42, 73, 52, 0.12);
       --ink: #173126;
-      --accent: #b85c38;
-      --accent-gold: #9c7a3f;
+      --accent-gold: #6b5327;
       --danger: #8a2f2b;
       --success: #2f6f50;
       --radius: 24px;
@@ -197,6 +196,12 @@ HOTEL_HTML = """<!DOCTYPE html>
       border: 1px solid var(--line);
       border-radius: var(--radius);
       padding: 24px;
+    }
+
+    #demo-disclaimer {
+      background: var(--panel-strong);
+      border: 1px solid var(--accent-gold);
+      font-weight: 600;
     }
 
     .section-divider {
