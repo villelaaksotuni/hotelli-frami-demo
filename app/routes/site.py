@@ -63,7 +63,7 @@ def _render_how_it_works_html(request: Request) -> str:
     )
 
     return (
-        '<section class="panel" id="how-it-works">'
+        '<section class="section-divider" id="how-it-works">'
         f"<h2>{html.escape(HOW_IT_WORKS_HEADING_FI, quote=True)}</h2>"
         f"<p>{html.escape(HOW_IT_WORKS_INTRO_FI, quote=True)}</p>"
         "<ol>"
@@ -115,7 +115,7 @@ TEASER_UNITS: tuple[Unit, ...] = tuple(_first_unit_in_area(area) for area in ROO
 def _render_room_teasers_html() -> str:
     rows_html = "".join(_render_room_teaser_row_html(unit) for unit in TEASER_UNITS)
     return (
-        '<section class="panel" id="room-teasers">'
+        '<section class="section-divider" id="room-teasers">'
         f"<h2>{TEASER_HEADING_FI}</h2>"
         f"<p>{TEASER_INTRO_FI}</p>"
         f'<div class="room-teaser-list">{rows_html}</div>'
@@ -137,6 +137,7 @@ HOTEL_HTML = """<!DOCTYPE html>
       --line: rgba(42, 73, 52, 0.12);
       --ink: #173126;
       --accent: #b85c38;
+      --accent-gold: #9c7a3f;
       --danger: #8a2f2b;
       --success: #2f6f50;
       --radius: 24px;
@@ -164,27 +165,31 @@ HOTEL_HTML = """<!DOCTYPE html>
     }
 
     h1 {
-      font-size: 28px;
-      line-height: 1.15;
+      font-size: 44px;
+      line-height: 1.2;
+      letter-spacing: -0.015em;
     }
 
     h2 {
-      font-size: 20px;
-      line-height: 1.2;
+      font-size: 24px;
+      line-height: 1.3;
+      letter-spacing: 0.01em;
     }
 
     .label {
-      font-size: 13px;
-      font-weight: 400;
+      font-size: 12px;
+      font-weight: 600;
       line-height: 1.4;
-      color: var(--ink);
+      color: var(--accent-gold);
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
     }
 
     .shell {
       width: min(1200px, calc(100% - 32px));
       margin: 24px auto 48px;
       display: grid;
-      gap: 24px;
+      gap: 56px;
     }
 
     .panel {
@@ -194,15 +199,22 @@ HOTEL_HTML = """<!DOCTYPE html>
       padding: 24px;
     }
 
+    .section-divider {
+      border-top: 1px solid var(--line);
+      padding-top: 40px;
+    }
+
     .top-nav {
       display: flex;
       gap: 24px;
     }
 
     .top-nav a {
-      color: var(--accent);
+      color: var(--accent-gold);
       font-weight: 700;
       text-decoration: none;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
     }
 
     ol, ul {
@@ -223,9 +235,12 @@ HOTEL_HTML = """<!DOCTYPE html>
       display: flex;
       justify-content: space-between;
       gap: 16px;
-      padding: 12px 16px;
-      border: 1px solid var(--line);
-      border-radius: 16px;
+      padding: 20px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .room-teaser-row:last-child {
+      border-bottom: none;
     }
 
     .room-card-title {
@@ -241,6 +256,10 @@ HOTEL_HTML = """<!DOCTYPE html>
     @media (max-width: 980px) {
       .panel {
         padding: 20px;
+      }
+
+      .section-divider {
+        padding-top: 28px;
       }
 
       .room-teaser-row {
