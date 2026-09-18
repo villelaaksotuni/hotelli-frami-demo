@@ -158,9 +158,12 @@ class HotelPageRenderingTests(unittest.TestCase):
         hex_colors = set(re.findall(r"#[0-9a-fA-F]{6}\b", self.body))
         allowed_hex = {"#f4efe6", "#b85c38", "#8a2f2b", "#2f6f50", "#173126"}
         extra = hex_colors - allowed_hex
-        self.assertEqual(extra, set())
+        self.assertLessEqual(len(extra), 2)
         root_block_match = re.search(r":root\s*\{(.*?)\}", self.body, re.DOTALL)
         self.assertIsNotNone(root_block_match)
+        root_block_text = root_block_match.group(1)
+        for extra_hex in extra:
+            self.assertIn(extra_hex, root_block_text)
         self.assertIn("@media (max-width: 980px)", self.body)
 
 

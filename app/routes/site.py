@@ -137,6 +137,7 @@ HOTEL_HTML = """<!DOCTYPE html>
       --line: rgba(42, 73, 52, 0.12);
       --ink: #173126;
       --accent: #b85c38;
+      --accent-gold: #9c7a3f;
       --danger: #8a2f2b;
       --success: #2f6f50;
       --radius: 24px;
@@ -164,20 +165,24 @@ HOTEL_HTML = """<!DOCTYPE html>
     }
 
     h1 {
-      font-size: 28px;
-      line-height: 1.15;
+      font-size: 44px;
+      line-height: 1.2;
+      letter-spacing: -0.015em;
     }
 
     h2 {
-      font-size: 20px;
-      line-height: 1.2;
+      font-size: 24px;
+      line-height: 1.3;
+      letter-spacing: 0.01em;
     }
 
     .label {
-      font-size: 13px;
-      font-weight: 400;
+      font-size: 12px;
+      font-weight: 600;
       line-height: 1.4;
-      color: var(--ink);
+      color: var(--accent-gold);
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
     }
 
     .shell {
@@ -200,9 +205,11 @@ HOTEL_HTML = """<!DOCTYPE html>
     }
 
     .top-nav a {
-      color: var(--accent);
+      color: var(--accent-gold);
       font-weight: 700;
       text-decoration: none;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
     }
 
     ol, ul {
