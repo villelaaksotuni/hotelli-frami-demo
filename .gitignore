@@ -16,5 +16,4 @@ dist/
 .docker/
 whatsapp commands.txt
 .gsd/
-.planning/milestone.lock
-.planning/research/.cache/
+.planning/
