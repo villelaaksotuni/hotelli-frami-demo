@@ -16,6 +16,9 @@ from app.routes.site import (
     RESERVE_STEP_FI,
     ROOM_AREAS_FI,
     TEASER_UNITS,
+    TOKENS_CSS_FILE,
+    TOKENS_CSS_PATH,
+    design_tokens,
     hotel_page,
 )
 from app.routes.stats import stats_page
@@ -124,9 +127,8 @@ class HotelPageRenderingTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, lowered)
 
-    def test_no_hero_or_brochure_markup_remains(self):
+    def test_no_brochure_markup_returns(self):
         for forbidden in (
-            'class="hero',
             "hero-eyebrow",
             "hero-tagline",
             "room-card-grid",
@@ -147,6 +149,16 @@ class HotelPageRenderingTests(unittest.TestCase):
         self.assertIn('href="/live"', self.body)
         self.assertIn('href="/tilastot"', self.body)
 
+    def test_design_tokens_are_served_and_path_prefix_aware(self):
+        tokens_response = asyncio.run(design_tokens())
+        self.assertEqual(tokens_response.media_type, "text/css")
+        self.assertEqual(tokens_response.path, TOKENS_CSS_FILE)
+
+        prefixed_request = _build_request()
+        prefixed_request.scope["root_path"] = "/demo"
+        prefixed_body = asyncio.run(hotel_page(prefixed_request)).body.decode("utf-8")
+        self.assertIn('href="/demo/tokens.css"', prefixed_body)
+
     def test_route_mounted_once_with_no_dependencies(self):
         from app.main import app
 
@@ -155,15 +167,24 @@ class HotelPageRenderingTests(unittest.TestCase):
         self.assertEqual(matches[0].dependant.dependencies, [])
 
     def test_palette_subset_and_breakpoint(self):
-        hex_colors = set(re.findall(r"#[0-9a-fA-F]{6}\b", self.body))
-        allowed_hex = {"#f4efe6", "#b85c38", "#8a2f2b", "#2f6f50", "#173126"}
-        extra = hex_colors - allowed_hex
-        self.assertEqual(extra, {"#6b5327"})
-        root_block_match = re.search(r":root\s*\{(.*?)\}", self.body, re.DOTALL)
+        self.assertIn(f'href="{TOKENS_CSS_PATH}"', self.body)
+        tokens = TOKENS_CSS_FILE.read_text(encoding="utf-8")
+        root_block_match = re.search(r":root\s*\{(.*?)\}", tokens, re.DOTALL)
         self.assertIsNotNone(root_block_match)
         root_block_text = root_block_match.group(1)
-        for extra_hex in extra:
-            self.assertIn(extra_hex, root_block_text)
+        expected_tokens = {
+            "--beige",
+            "--beigeDark",
+            "--primary-900",
+            "--primary-500",
+            "--golden-500",
+            "--gray-900",
+            "--gray-700",
+            "--gray-500",
+        }
+        for token in expected_tokens:
+            self.assertIn(token, root_block_text)
+        self.assertIn("--primary-900: #27374d", root_block_text)
         self.assertIn("@media (max-width: 980px)", self.body)
 
     def test_h1_is_dominant_uppercase_display_headline(self):
@@ -171,49 +192,31 @@ class HotelPageRenderingTests(unittest.TestCase):
         self.assertIsNotNone(match)
         group = match.group(1)
         self.assertIn("text-transform: uppercase", group)
-        font_size_match = re.search(r"font-size:\s*(\d+)px", group)
-        self.assertIsNotNone(font_size_match)
-        font_size = int(font_size_match.group(1))
-        self.assertGreaterEqual(font_size, 72)
-        self.assertLessEqual(font_size, 96)
+        self.assertIn("font-size: var(--display-size)", group)
+        self.assertIn("font-weight: 300", group)
+        self.assertIn("line-height: 0.9", group)
         letter_spacing_match = re.search(r"letter-spacing:\s*(-?[\d.]+)em", group)
         self.assertIsNotNone(letter_spacing_match)
         letter_spacing = float(letter_spacing_match.group(1))
         self.assertLessEqual(letter_spacing, -0.02)
 
-    def test_h1_scales_down_at_narrow_breakpoint(self):
-        desktop_match = re.search(r"h1\s*\{([^}]*)\}", self.body)
-        self.assertIsNotNone(desktop_match)
-        desktop_font_size = int(
-            re.search(r"font-size:\s*(\d+)px", desktop_match.group(1)).group(1)
-        )
-
-        media_section = self.body.split("@media (max-width: 980px)", 1)[1]
-        mobile_match = re.search(r"h1\s*\{([^}]*)\}", media_section)
-        self.assertIsNotNone(mobile_match)
-        mobile_font_size_match = re.search(
-            r"font-size:\s*(\d+)px", mobile_match.group(1)
-        )
-        self.assertIsNotNone(mobile_font_size_match)
-        mobile_font_size = int(mobile_font_size_match.group(1))
-        self.assertGreaterEqual(mobile_font_size, 40)
-        self.assertLessEqual(mobile_font_size, 48)
-        self.assertLess(mobile_font_size, desktop_font_size)
+    def test_h1_uses_fluid_reference_scale(self):
+        tokens = TOKENS_CSS_FILE.read_text(encoding="utf-8")
+        self.assertIn("clamp(3.9rem, 14vw, 13.3rem)", tokens)
+        self.assertIn("@media (max-width: 560px)", self.body)
 
     def test_label_and_nav_text_use_ink_not_accent_gold(self):
-        self.assertEqual(self.body.count("var(--accent-gold)"), 1)
-
         label_match = re.search(r"\.label\s*\{([^}]*)\}", self.body)
         self.assertIsNotNone(label_match)
-        self.assertIn("color: var(--ink)", label_match.group(1))
+        self.assertIn("color: var(--primary-900)", label_match.group(1))
 
         nav_match = re.search(r"\.top-nav a\s*\{([^}]*)\}", self.body)
         self.assertIsNotNone(nav_match)
-        self.assertIn("color: var(--ink)", nav_match.group(1))
+        self.assertIn("color: var(--primary-900)", nav_match.group(1))
 
         disclaimer_match = re.search(r"#demo-disclaimer\s*\{([^}]*)\}", self.body)
         self.assertIsNotNone(disclaimer_match)
-        self.assertIn("var(--accent-gold)", disclaimer_match.group(1))
+        self.assertIn("var(--golden-500)", disclaimer_match.group(1))
 
 
 class TeaserRegistryAndNavConsistencyTests(unittest.TestCase):
@@ -260,7 +263,8 @@ class TeaserRegistryAndNavConsistencyTests(unittest.TestCase):
         self.assertNotIn("tel:", body)
 
     def test_structural_panel_count_and_no_table(self):
-        self.assertEqual(self.hotel_body.count("<section"), 3)
+        self.assertEqual(self.hotel_body.count("<section"), 4)
+        self.assertIn('class="hero"', self.hotel_body)
         self.assertIn('id="demo-disclaimer"', self.hotel_body)
         self.assertIn('id="how-it-works"', self.hotel_body)
         self.assertIn('id="room-teasers"', self.hotel_body)

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
 from app.path_prefix import build_request_app_path
-from app.routes.site import HOTEL_PAGE_PATH
+from app.routes.site import HOTEL_PAGE_PATH, TOKENS_CSS_PATH
 from app.services.public_stats import PUBLIC_CAPABILITY_TOOLS, build_public_stats
 from app.services.realtime_session import (
     AVAILABILITY_TOOL_NAME,
@@ -48,17 +48,18 @@ STATS_HTML = """<!DOCTYPE html>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Hotelli Frami | Demon tilastot</title>
+  <link rel="stylesheet" href="__TOKENS_LINK__" />
   <style>
     :root {
-      --bg: #f4efe6;
+      --bg: var(--beige, #f4efe6);
       --panel: rgba(255, 250, 242, 0.78);
       --panel-strong: rgba(255, 248, 236, 0.94);
-      --line: rgba(42, 73, 52, 0.12);
-      --ink: #173126;
-      --accent: #b85c38;
+      --line: color-mix(in srgb, var(--primary-900, #173126) 18%, transparent);
+      --ink: var(--primary-900, #173126);
+      --accent: var(--golden-500, #b85c38);
       --danger: #8a2f2b;
       --success: #2f6f50;
-      --radius: 24px;
+      --radius: 2px;
     }
 
     * {
@@ -70,26 +71,44 @@ STATS_HTML = """<!DOCTYPE html>
       min-height: 100vh;
       background: var(--bg);
       color: var(--ink);
-      font-family: "Trebuchet MS", "Lucida Sans Unicode", sans-serif;
+      font-family: var(--font-sans, "Helvetica Neue", Arial, sans-serif);
       font-size: 16px;
-      font-weight: 400;
-      line-height: 1.5;
+      font-weight: 300;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
     }
 
-    h1, h2 {
-      font-family: Georgia, "Times New Roman", serif;
-      font-weight: 700;
-      margin: 0 0 16px;
+    .skip-link {
+      position: fixed;
+      z-index: 10;
+      top: 1rem;
+      left: 1rem;
+      padding: 0.75rem 1rem;
+      background: var(--ink);
+      color: var(--white, white);
+      transform: translateY(-180%);
     }
+
+    .skip-link:focus { transform: translateY(0); }
+
+    :focus-visible {
+      outline: 2px solid var(--ink);
+      outline-offset: 4px;
+    }
+
+    h1, h2 { margin: 0; font-weight: 400; }
 
     h1 {
-      font-size: 28px;
-      line-height: 1.15;
+      font-size: clamp(2.75rem, 8vw, 6.5rem);
+      letter-spacing: -0.05em;
+      line-height: 0.95;
     }
 
     h2 {
-      font-size: 20px;
-      line-height: 1.2;
+      margin-bottom: 1.25rem;
+      font-size: clamp(1.4rem, 3vw, 2.25rem);
+      letter-spacing: -0.025em;
+      line-height: 1.15;
     }
 
     .label {
@@ -100,23 +119,35 @@ STATS_HTML = """<!DOCTYPE html>
     }
 
     .shell {
-      width: min(1200px, calc(100% - 32px));
-      margin: 24px auto 48px;
+      width: min(1200px, calc(100% - (2 * var(--page-gutter, 1.5rem))));
+      margin: 0 auto;
+      padding: clamp(2rem, 6vw, 5rem) 0;
       display: grid;
-      gap: 24px;
+      gap: clamp(1.5rem, 3vw, 2.5rem);
     }
 
     .panel {
-      background: var(--panel);
+      background: color-mix(in srgb, var(--beigeDark, #f4efe6) 58%, white);
       border: 1px solid var(--line);
       border-radius: var(--radius);
-      padding: 24px;
+      padding: clamp(1.25rem, 3vw, 2rem);
+    }
+
+    .top-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+      padding-bottom: 1.25rem;
+      border-bottom: 1px solid var(--line);
     }
 
     .top-nav a {
-      color: var(--accent);
-      font-weight: 700;
-      text-decoration: none;
+      color: var(--ink);
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-underline-offset: 0.25em;
+      text-transform: uppercase;
     }
 
     .stats-grid {
@@ -131,10 +162,9 @@ STATS_HTML = """<!DOCTYPE html>
     }
 
     .stat-value {
-      font-size: 32px;
-      font-weight: 700;
-      font-family: Georgia, "Times New Roman", serif;
-      color: var(--accent);
+      font-size: clamp(2rem, 5vw, 3.75rem);
+      font-weight: 400;
+      color: var(--ink);
     }
 
     #capability-usage {
@@ -165,11 +195,16 @@ STATS_HTML = """<!DOCTYPE html>
         grid-template-columns: 1fr;
       }
     }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { transition-duration: 0.01ms !important; }
+    }
   </style>
 </head>
 <body>
-  <main class="shell">
-    <nav class="top-nav"><a href="__HOTEL_LINK__">Hotelli Frami</a> <a href="__LIVE_LINK__">Live-näkymä</a></nav>
+  <a class="skip-link" href="#main-content">Siirry pääsisältöön</a>
+  <main class="shell" id="main-content">
+    <nav class="top-nav" aria-label="Päänavigaatio"><a href="__HOTEL_LINK__">Hotelli Frami</a> <a href="__LIVE_LINK__">Live-näkymä</a></nav>
     <h1>Demon tilastot</h1>
     <section class="panel">
       <p>Tämä sivu näyttää vain kaikkien demopuheluiden yhteenlasketut kokonaisluvut. Yksittäisiä puheluita, soittajia tai puheluiden sisältöä ei näytetä eikä niitä ole mahdollista hakea tästä näkymästä.</p>
@@ -250,6 +285,7 @@ def _render_stats_content_html(stats: dict[str, Any]) -> str:
 def _render_stats_html(*, request: Request, stats: dict[str, Any] | None) -> str:
     live_link = build_request_app_path(request, "/live")
     hotel_link = build_request_app_path(request, HOTEL_PAGE_PATH)
+    tokens_link = build_request_app_path(request, TOKENS_CSS_PATH)
 
     if stats is None or int(stats.get("total_calls") or 0) == 0:
         content_html = _render_empty_state_html()
@@ -259,6 +295,7 @@ def _render_stats_html(*, request: Request, stats: dict[str, Any] | None) -> str
     return (
         STATS_HTML.replace("__LIVE_LINK__", html.escape(live_link, quote=True))
         .replace("__HOTEL_LINK__", html.escape(hotel_link, quote=True))
+        .replace("__TOKENS_LINK__", html.escape(tokens_link, quote=True))
         .replace("__CONTENT_HTML__", content_html)
     )
 

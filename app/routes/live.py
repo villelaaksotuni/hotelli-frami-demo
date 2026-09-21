@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import logging
 from typing import Any
@@ -11,6 +12,7 @@ from starlette.responses import StreamingResponse
 
 from app.models.call import utc_now_iso
 from app.path_prefix import build_request_app_path
+from app.routes.site import HOTEL_PAGE_PATH, TOKENS_CSS_PATH
 from app.services.live_broadcast import (
     CAPABILITY_EXAMPLES,
     LIVE_BOARD_LIMIT,
@@ -40,18 +42,19 @@ LIVE_HTML = """<!DOCTYPE html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Hotelli Frami | Livekutsun nakyma</title>
+  <title>Hotelli Frami | Live-näkymä</title>
+  <link rel="stylesheet" href="__TOKENS_LINK__" />
   <style>
     :root {
-      --bg: #f4efe6;
+      --bg: var(--beige, #f4efe6);
       --panel: rgba(255, 250, 242, 0.78);
       --panel-strong: rgba(255, 248, 236, 0.94);
-      --line: rgba(42, 73, 52, 0.12);
-      --ink: #173126;
-      --accent: #b85c38;
+      --line: color-mix(in srgb, var(--primary-900, #173126) 18%, transparent);
+      --ink: var(--primary-900, #173126);
+      --accent: var(--golden-500, #b85c38);
       --danger: #8a2f2b;
       --success: #2f6f50;
-      --radius: 24px;
+      --radius: 2px;
     }
 
     * {
@@ -63,26 +66,48 @@ LIVE_HTML = """<!DOCTYPE html>
       min-height: 100vh;
       background: var(--bg);
       color: var(--ink);
-      font-family: "Trebuchet MS", "Lucida Sans Unicode", sans-serif;
+      font-family: var(--font-sans, "Helvetica Neue", Arial, sans-serif);
       font-size: 16px;
-      font-weight: 400;
-      line-height: 1.5;
+      font-weight: 300;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: inherit; }
+
+    .skip-link {
+      position: fixed;
+      z-index: 10;
+      top: 1rem;
+      left: 1rem;
+      padding: 0.75rem 1rem;
+      background: var(--ink);
+      color: var(--white, white);
+      transform: translateY(-180%);
+    }
+
+    .skip-link:focus { transform: translateY(0); }
+
+    :focus-visible {
+      outline: 2px solid var(--ink);
+      outline-offset: 4px;
     }
 
     h1, h2 {
-      font-family: Georgia, "Times New Roman", serif;
-      font-weight: 700;
       margin: 0 0 16px;
+      font-weight: 400;
     }
 
     h1 {
-      font-size: 28px;
-      line-height: 1.15;
+      font-size: clamp(2.5rem, 7vw, 5.5rem);
+      letter-spacing: -0.045em;
+      line-height: 0.96;
     }
 
     h2 {
-      font-size: 20px;
-      line-height: 1.2;
+      font-size: clamp(1.35rem, 2.5vw, 2rem);
+      letter-spacing: -0.02em;
+      line-height: 1.15;
     }
 
     .label {
@@ -93,23 +118,43 @@ LIVE_HTML = """<!DOCTYPE html>
     }
 
     .shell {
-      width: min(1200px, calc(100% - 32px));
-      margin: 24px auto 48px;
+      width: min(1200px, calc(100% - (2 * var(--page-gutter, 1.5rem))));
+      margin: 0 auto;
+      padding: clamp(2rem, 6vw, 5rem) 0;
       display: grid;
-      gap: 24px;
+      gap: clamp(1.5rem, 3vw, 2.5rem);
+    }
+
+    .top-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+      padding-bottom: 1.25rem;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .top-nav a {
+      color: var(--ink);
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-underline-offset: 0.25em;
+      text-transform: uppercase;
     }
 
     .panel {
-      background: var(--panel);
+      background: color-mix(in srgb, var(--beigeDark, #f4efe6) 58%, white);
       border: 1px solid var(--line);
       border-radius: var(--radius);
-      padding: 24px;
+      padding: clamp(1.25rem, 3vw, 2rem);
     }
 
     .conn-rail {
       display: flex;
       align-items: center;
       gap: 8px;
+      padding-bottom: 1.25rem;
+      border-bottom: 1px solid var(--line);
     }
 
     #conn-dot {
@@ -164,7 +209,8 @@ LIVE_HTML = """<!DOCTYPE html>
       background: var(--panel-strong);
       color: var(--ink);
       font-family: inherit;
-      font-size: 13px;
+      font-size: 14px;
+      font-weight: 600;
       cursor: pointer;
     }
 
@@ -242,8 +288,9 @@ LIVE_HTML = """<!DOCTYPE html>
     }
 
     .capability-entry.lit {
-      border-color: var(--accent);
-      color: var(--accent);
+      border-color: var(--ink);
+      background: var(--beigeDark, #f4efe6);
+      color: var(--ink);
     }
 
     .capability-phrase {
@@ -310,18 +357,31 @@ LIVE_HTML = """<!DOCTYPE html>
         grid-template-columns: 1fr;
       }
     }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
   </style>
 </head>
 <body>
-  <main class="shell">
-    <div class="conn-rail" id="conn-rail">
-      <span id="conn-dot"></span>
+  <a class="skip-link" href="#main-content">Siirry pääsisältöön</a>
+  <main class="shell" id="main-content">
+    <nav class="top-nav" aria-label="Päänavigaatio">
+      <a href="__HOTEL_LINK__">Hotelli Frami</a>
+      <a href="__STATS_LINK__">Demon tilastot</a>
+    </nav>
+    <div class="conn-rail" id="conn-rail" role="status" aria-live="polite">
+      <span id="conn-dot" aria-hidden="true"></span>
       <div>
         <span id="conn-label">Yhdistetaan...</span>
         <p id="conn-detail" class="label"></p>
       </div>
     </div>
-    <h1>Livekutsun nakyma</h1>
+    <h1>Live-näkymä</h1>
     <div class="live-grid">
       <div class="live-col">
         <section class="panel call-panel" id="panel-status">
@@ -338,7 +398,7 @@ LIVE_HTML = """<!DOCTYPE html>
               aria-pressed="true"
             >Lukitse alimpaan</button>
           </div>
-          <div id="transcript-list">Yhdistetaan live-nakymaan...</div>
+          <div id="transcript-list" role="log" aria-live="polite" aria-relevant="additions text">Yhdistetään live-näkymään...</div>
         </section>
       </div>
       <div class="live-col">
@@ -848,13 +908,26 @@ async def live_stream(request: Request) -> StreamingResponse:
 @router.get("/live")
 async def live_page(request: Request) -> HTMLResponse:
     return HTMLResponse(
-        content=_render_live_html(build_request_app_path(request, "/api/live/stream"))
+        content=_render_live_html(
+            build_request_app_path(request, "/api/live/stream"),
+            build_request_app_path(request, TOKENS_CSS_PATH),
+            build_request_app_path(request, HOTEL_PAGE_PATH),
+            build_request_app_path(request, "/tilastot"),
+        )
     )
 
 
-def _render_live_html(api_live_stream_url: str) -> str:
+def _render_live_html(
+    api_live_stream_url: str,
+    tokens_link: str = TOKENS_CSS_PATH,
+    hotel_link: str = HOTEL_PAGE_PATH,
+    stats_link: str = "/tilastot",
+) -> str:
     return (
-        LIVE_HTML.replace(
+        LIVE_HTML.replace("__TOKENS_LINK__", html.escape(tokens_link, quote=True))
+        .replace("__HOTEL_LINK__", html.escape(hotel_link, quote=True))
+        .replace("__STATS_LINK__", html.escape(stats_link, quote=True))
+        .replace(
             "__API_LIVE_STREAM_URL_JSON__",
             json.dumps(api_live_stream_url),
         )

@@ -1,0 +1,24 @@
+:root {
+  /* Verified from the supplied Ritz DOM. */
+  --primary-900: #27374d;
+
+  /* The compiled Ritz stylesheet was not included in ref/. These supporting
+     values are calibrated from the supplied screenshot and preserve its
+     cream, softened-blue and muted-gold relationships. */
+  --beige: #f7f3ee;
+  --beigeDark: #ebe4da;
+  --primary-500: #56667a;
+  --golden-500: #a58a58;
+  --gray-900: #303943;
+  --gray-700: #68717b;
+  --gray-500: #a9afb5;
+
+  --white: #ffffff;
+  --font-sans: "Helvetica Neue", "Avenir Next", Avenir, Helvetica, Arial, sans-serif;
+  --display-size: clamp(3.9rem, 14vw, 13.3rem);
+  --section-title-size: clamp(1.9rem, 5vw, 3.75rem);
+  --page-gutter: clamp(1.5rem, 3.35vw, 3rem);
+  --section-space: clamp(4rem, 9vw, 8rem);
+  --grid-gap: 0.875rem;
+  --hairline: 1px solid color-mix(in srgb, var(--primary-900) 18%, transparent);
+}
