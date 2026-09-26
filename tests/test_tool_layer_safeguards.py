@@ -1,8 +1,10 @@
 import asyncio
+import dataclasses
 import json
 import unittest
 from unittest.mock import patch
 
+from app.config.settings import settings
 from app.models.call import CallConfig, CallSession
 from app.services.callback_request_sms import CallbackRequestSmsService
 from app.services.live_broadcast import LIVE_SLOT_KEYS
@@ -142,7 +144,11 @@ class ToolSchemaShapeRegressionTests(unittest.TestCase):
     """
 
     def test_exposed_tool_list_has_exactly_three_schemas_and_no_destination_key(self):
-        payload = _build_session_update_payload(CallConfig(), instructions="x")
+        settings_with_callback = dataclasses.replace(
+            settings, callback_request_to_phone="+358401234567"
+        )
+        with patch("app.services.realtime_session.settings", settings_with_callback):
+            payload = _build_session_update_payload(CallConfig(), instructions="x")
         tools = payload["session"]["tools"]
         self.assertEqual(len(tools), 3, tools)
 
@@ -157,6 +163,17 @@ class ToolSchemaShapeRegressionTests(unittest.TestCase):
             [],
             f"destination-shaped parameter(s) found in exposed tool schema(s): {offenders}",
         )
+
+    def test_callback_tool_omitted_when_owner_phone_not_configured(self):
+        settings_without_callback = dataclasses.replace(
+            settings, callback_request_to_phone=None
+        )
+        with patch("app.services.realtime_session.settings", settings_without_callback):
+            payload = _build_session_update_payload(CallConfig(), instructions="x")
+        tools = payload["session"]["tools"]
+        tool_names = [tool.get("name") for tool in tools]
+        self.assertEqual(len(tools), 2, tools)
+        self.assertNotIn(CALLBACK_REQUEST_SMS_TOOL_NAME, tool_names)
 
     def test_live_slot_keys_contain_no_destination_shaped_key(self):
         offenders = [key for key in LIVE_SLOT_KEYS if _is_destination_shaped(key)]

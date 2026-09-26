@@ -128,6 +128,13 @@ CALLBACK_REQUEST_SMS_TOOL_SCHEMA = {
 }
 
 
+def _build_tool_schemas() -> list[dict[str, Any]]:
+    tools = [AVAILABILITY_TOOL_SCHEMA, CREATE_RESERVATION_TOOL_SCHEMA]
+    if settings.callback_request_to_phone:
+        tools.append(CALLBACK_REQUEST_SMS_TOOL_SCHEMA)
+    return tools
+
+
 async def initialize_session(openai_ws: Any, config: CallConfig) -> None:
     session_update = _build_session_update_payload(config, instructions=config.system_message)
     await asyncio.wait_for(
@@ -211,11 +218,7 @@ def _build_session_update_payload(config: CallConfig, instructions: str) -> dict
             },
             "instructions": instructions,
             "output_modalities": ["audio"],
-            "tools": [
-                AVAILABILITY_TOOL_SCHEMA,
-                CALLBACK_REQUEST_SMS_TOOL_SCHEMA,
-                CREATE_RESERVATION_TOOL_SCHEMA,
-            ],
+            "tools": _build_tool_schemas(),
             "tool_choice": "auto",
         },
     }
