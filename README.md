@@ -96,6 +96,7 @@ above are the only cost ceiling that exists for this deployment.
 
 ## Recommended container settings
 
+- Bind the container port to loopback only (`127.0.0.1:8000:8000`), not `0.0.0.0`/all interfaces. A reverse proxy (Caddy, nginx, etc.) should be the sole public entry point; Docker's own port publishing bypasses the host firewall and `ufw`, so an all-interfaces bind exposes the app directly over plain HTTP to anyone who finds the host's IP, entirely independent of whatever TLS/proxy setup fronts the domain.
 - Set `APP_DATA_DIR=/data`
 - Mount `/data` as a persistent volume
 - Keep `VALIDATE_STARTUP_DEPENDENCIES=false` for generic health/startup checks, or set it to `true` if you want the container to fail fast when live credentials are missing
@@ -108,7 +109,7 @@ If `DAILY_SUMMARY_TO_PHONE` is set, the app also runs an in-process daily SMS di
 
 ```bash
 docker build -t hotelli-frami-voice .
-docker run --rm -p 8000:8000 --env-file .env -e APP_DATA_DIR=/data -v hotelli-frami-data:/data hotelli-frami-voice
+docker run --rm -p 127.0.0.1:8000:8000 --env-file .env -e APP_DATA_DIR=/data -v hotelli-frami-data:/data hotelli-frami-voice
 ```
 
 Health check endpoint:
